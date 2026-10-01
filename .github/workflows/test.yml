@@ -1,10 +1,10 @@
-name: Generate Voice
+name: Generate Video
 
 on:
   workflow_dispatch:
 
 jobs:
-  voice:
+  video:
     runs-on: ubuntu-latest
 
     steps:
@@ -32,22 +32,20 @@ jobs:
         run: |
           python3 scripts/voice.py
 
+      - name: Create Shorts video
+        run: |
+          python3 scripts/make_video.py
+
       - name: Show generated files
         run: |
-          echo "===== SCRIPT ====="
-          cat output/script.txt
-          echo ""
-          echo "===== FACT CHECK ====="
-          cat output/fact_check.txt
-          echo ""
-          echo "===== FILES ====="
           ls -lh output/
 
-      - name: Upload voice and results
+      - name: Upload Shorts
         uses: actions/upload-artifact@v4
         with:
-          name: voice-output
+          name: shorts-video
           path: |
             output/script.txt
             output/fact_check.txt
             output/voice.wav
+            output/short.mp4
