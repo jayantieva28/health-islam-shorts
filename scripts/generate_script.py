@@ -44,7 +44,7 @@ data = {
 
 url = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-3.8-flash:generateContent"
+    "models/gemini-3.8-flash-lite:generateContent"
 )
 
 request = urllib.request.Request(
