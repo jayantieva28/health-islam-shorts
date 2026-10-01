@@ -57,8 +57,31 @@ request = urllib.request.Request(
     method="POST"
 )
 
-with urllib.request.urlopen(request) as response:
-    result = json.loads(response.read().decode("utf-8"))
+import time
+import urllib.error
+
+result = None
+
+for attempt in range(5):
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        print(f"Gemini API success on attempt {attempt + 1}")
+        break
+
+    except urllib.error.HTTPError as e:
+        print(f"Gemini API returned HTTP {e.code} on attempt {attempt + 1}")
+
+        if e.code == 503 and attempt < 4:
+            wait_time = 5 * (attempt + 1)
+            print(f"Waiting {wait_time} seconds before retry...")
+            time.sleep(wait_time)
+        else:
+            print(e.read().decode("utf-8"))
+            raise
+
+if result is None:
+    raise RuntimeError("Gemini API did not return a response")
 
 script = result["candidates"][0]["content"]["parts"][0]["text"]
 
