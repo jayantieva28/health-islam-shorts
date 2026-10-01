@@ -1,35 +1,39 @@
-name: V2 Test
+name: Gemini API Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  generate-video:
+  test-gemini:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install FFmpeg
+      - name: Test Gemini API
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          RESPONSE=$(curl -s \
+            -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent" \
+            -H "Content-Type: application/json" \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            -d '{
+              "contents": [
+                {
+                  "parts": [
+                    {
+                      "text": "Reply with exactly: GEMINI CONNECTION SUCCESS"
+                    }
+                  ]
+                }
+              ]
+            }')
 
-      - name: Check Python
-        run: |
-          python3 --version
+          echo "$RESPONSE"
 
-      - name: Check FFmpeg
-        run: |
-          ffmpeg -version
-
-      - name: Run video generator
-        run: |
-          python3 scripts/test_pipeline.py
-
-      - name: Upload generated video
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-short
-          path: output/test_short.mp4
+          if echo "$RESPONSE" | grep -q "GEMINI CONNECTION SUCCESS"; then
+            echo "GEMINI API TEST SUCCESS"
+          else
+            echo "GEMINI API TEST FAILED"
+            exit 1
+          fi
