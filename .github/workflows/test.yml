@@ -1,40 +1,53 @@
-name: Generate and Fact Check
+name: Generate Voice
 
 on:
   workflow_dispatch:
 
 jobs:
-  generate-and-check:
+  voice:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate script with OpenRouter
+      - name: Install Piper
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install piper-tts
+
+      - name: Generate script
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           python3 scripts/generate_script.py
 
-      - name: Fact check script
+      - name: Fact check
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           python3 scripts/fact_check.py
 
-      - name: Show script
+      - name: Generate voice
         run: |
-          echo "===== GENERATED SCRIPT ====="
-          cat output/script.txt
+          python3 scripts/voice.py
 
-      - name: Show fact check
+      - name: Show generated files
         run: |
+          echo "===== SCRIPT ====="
+          cat output/script.txt
+          echo ""
           echo "===== FACT CHECK ====="
           cat output/fact_check.txt
+          echo ""
+          echo "===== FILES ====="
+          ls -lh output/
 
-      - name: Upload results
+      - name: Upload voice and results
         uses: actions/upload-artifact@v4
         with:
-          name: script-and-fact-check
-          path: output/
+          name: voice-output
+          path: |
+            output/script.txt
+            output/fact_check.txt
+            output/voice.wav
