@@ -8,13 +8,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Install Piper
-        run: |
-          python3 -m pip install --upgrade pip
-          pip install piper-tts
+    - name: Install FFmpeg and Piper
+      run: |
+      sudo apt-get update
+      sudo apt-get install -y ffmpeg
+      python3 -m pip install --upgrade pip
+      pip install piper-tts
 
       - name: Generate script
         env:
