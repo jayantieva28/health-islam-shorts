@@ -1,18 +1,29 @@
-name: OpenRouter Test
+name: Generate AI Script
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-openrouter:
+  generate-script:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test OpenRouter
+      - name: Generate script with OpenRouter
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          python3 scripts/test_openrouter.py
+          python3 scripts/generate_script.py
+
+      - name: Show generated script
+        run: |
+          echo "===== GENERATED SCRIPT ====="
+          cat output/script.txt
+
+      - name: Upload generated script
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-script
+          path: output/script.txt
