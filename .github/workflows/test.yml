@@ -1,0 +1,18 @@
+name: V2 Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test system
+        run: |
+          echo "================================"
+          echo "HEALTH ISLAM SHORTS V2"
+          echo "================================"
+          echo "GitHub Actions is working!"
+          echo "Runner: $RUNNER_OS"
+          echo "Status: READY"
