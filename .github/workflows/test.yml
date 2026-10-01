@@ -1,29 +1,18 @@
-name: Generate AI Script
+name: Gemini Generate Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  generate-script:
+  test-generate:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate script with Gemini
+      - name: Test Gemini GenerateContent
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python3 scripts/generate_script.py
-
-      - name: Show generated script
-        run: |
-          echo "===== GENERATED SCRIPT ====="
-          cat output/script.txt
-
-      - name: Upload script
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-script
-          path: output/script.txt
+          python3 scripts/test_generate.py
