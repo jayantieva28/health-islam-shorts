@@ -4,15 +4,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  generate-video:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test system
-        run: |
-          echo "================================"
-          echo "HEALTH ISLAM SHORTS V2"
-          echo "================================"
-          echo "GitHub Actions is working!"
-          echo "Runner: $RUNNER_OS"
-          echo "Status: READY"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check FFmpeg
+        run: ffmpeg -version
+
+      - name: Run video generator
+        run: python3 scripts/test_pipeline.py
+
+      - name: Upload generated video
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-short
+          path: output/test_short.mp4
