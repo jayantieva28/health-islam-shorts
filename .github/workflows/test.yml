@@ -1,10 +1,10 @@
-name: Generate AI Script
+name: Generate and Fact Check
 
 on:
   workflow_dispatch:
 
 jobs:
-  generate-script:
+  generate-and-check:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,13 +17,24 @@ jobs:
         run: |
           python3 scripts/generate_script.py
 
-      - name: Show generated script
+      - name: Fact check script
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python3 scripts/fact_check.py
+
+      - name: Show script
         run: |
           echo "===== GENERATED SCRIPT ====="
           cat output/script.txt
 
-      - name: Upload generated script
+      - name: Show fact check
+        run: |
+          echo "===== FACT CHECK ====="
+          cat output/fact_check.txt
+
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: generated-script
-          path: output/script.txt
+          name: script-and-fact-check
+          path: output/
