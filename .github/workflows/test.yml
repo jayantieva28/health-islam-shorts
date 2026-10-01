@@ -34,10 +34,12 @@ jobs:
         run: |
           python3 scripts/voice.py
 
-      - name: Download visual
+      - name: Download video clips
+        env:
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
         run: |
           pip install requests
-          python3 scripts/get_visual.py
+          python3 scripts/get_video.py
 
       - name: Create Shorts video
         run: |
