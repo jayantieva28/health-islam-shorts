@@ -41,6 +41,17 @@ jobs:
           pip install requests
           python3 scripts/get_video.py
 
+      - name: Show downloaded clips
+        run: |
+          echo "===== DOWNLOADED VIDEO CLIPS ====="
+          ls -lh output/clips/
+
+      - name: Upload video clips
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-clips
+          path: output/clips/
+
       - name: Create Shorts video
         run: |
           python3 scripts/make_video.py
