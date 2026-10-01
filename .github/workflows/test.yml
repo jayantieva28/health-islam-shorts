@@ -1,18 +1,18 @@
-name: Gemini Generate Test
+name: OpenRouter Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-generate:
+  test-openrouter:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test Gemini GenerateContent
+      - name: Test OpenRouter
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          python3 scripts/test_generate.py
+          python3 scripts/test_openrouter.py
