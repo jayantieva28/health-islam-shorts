@@ -1,38 +1,29 @@
-name: Gemini API Diagnostic
+name: Generate AI Script
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-gemini:
+  generate-script:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check API key
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate script with Gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "ERROR: GEMINI_API_KEY tidak terbaca."
-            exit 1
-          fi
+          python3 scripts/generate_script.py
 
-          echo "GEMINI_API_KEY terbaca dari GitHub Secret."
-
-      - name: List available Gemini models
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Show generated script
         run: |
-          curl -s \
-            "https://generativelanguage.googleapis.com/v1beta/models" \
-            -H "x-goog-api-key: $GEMINI_API_KEY" \
-            > models.json
+          echo "===== GENERATED SCRIPT ====="
+          cat output/script.txt
 
-          cat models.json
-
-          if grep -q '"models"' models.json; then
-            echo "MODEL LIST SUCCESS"
-          else
-            echo "MODEL LIST FAILED"
-            exit 1
-          fi
+      - name: Upload script
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-script
+          path: output/script.txt
