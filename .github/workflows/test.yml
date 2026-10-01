@@ -1,4 +1,4 @@
-name: Gemini API Test
+name: Gemini API Diagnostic
 
 on:
   workflow_dispatch:
@@ -8,32 +8,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test Gemini API
+      - name: Check API key
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          RESPONSE=$(curl -s \
-            -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent" \
-            -H "Content-Type: application/json" \
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "ERROR: GEMINI_API_KEY tidak terbaca."
+            exit 1
+          fi
+
+          echo "GEMINI_API_KEY terbaca dari GitHub Secret."
+
+      - name: List available Gemini models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          curl -s \
+            "https://generativelanguage.googleapis.com/v1beta/models" \
             -H "x-goog-api-key: $GEMINI_API_KEY" \
-            -d '{
-              "contents": [
-                {
-                  "parts": [
-                    {
-                      "text": "Reply with exactly: GEMINI CONNECTION SUCCESS"
-                    }
-                  ]
-                }
-              ]
-            }')
+            > models.json
 
-          echo "$RESPONSE"
+          cat models.json
 
-          if echo "$RESPONSE" | grep -q "GEMINI CONNECTION SUCCESS"; then
-            echo "GEMINI API TEST SUCCESS"
+          if grep -q '"models"' models.json; then
+            echo "MODEL LIST SUCCESS"
           else
-            echo "GEMINI API TEST FAILED"
+            echo "MODEL LIST FAILED"
             exit 1
           fi
