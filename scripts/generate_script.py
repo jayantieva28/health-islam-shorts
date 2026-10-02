@@ -2,6 +2,8 @@ import os
 import json
 import urllib.request
 
+os.makedirs("output", exist_ok=True)
+
 API_KEY = os.environ["OPENROUTER_API_KEY"]
 
 TOPIC = "Benefits of eating oats"
