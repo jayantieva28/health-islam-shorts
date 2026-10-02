@@ -52,6 +52,16 @@ jobs:
           name: video-clips
           path: output/clips/
 
+      - name: Create Shorts video
+        run: |
+          python3 scripts/make_video.py
+
+      - name: Upload final Shorts
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-short
+          path: output/short.mp4
+
       - name: Show generated files
         run: |
           ls -lh output/
