@@ -6,6 +6,9 @@ API_KEY = os.environ["OPENROUTER_API_KEY"]
 
 TOPIC = "Benefits of eating oats"
 
+with open("output/topic.txt", "w", encoding="utf-8") as f:
+    f.write(topic)
+
 PROMPT = f"""
 You are a professional health content writer for an English YouTube Shorts channel.
 
