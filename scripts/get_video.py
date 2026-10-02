@@ -1,5 +1,4 @@
 import os
-import re
 import requests
 
 API_KEY = os.environ.get("PIXABAY_API_KEY")
@@ -7,47 +6,27 @@ API_KEY = os.environ.get("PIXABAY_API_KEY")
 if not API_KEY:
     raise RuntimeError("PIXABAY_API_KEY belum tersedia.")
 
-SCRIPT_FILE = "output/script.txt"
+TOPIC_FILE = "output/topic.txt"
 OUTPUT_DIR = "output/clips"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Baca script
-with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
-    script = f.read().strip()
+# Baca topic
+if not os.path.exists(TOPIC_FILE):
+    raise RuntimeError("output/topic.txt tidak ditemukan.")
 
-if not script:
-    raise RuntimeError("output/script.txt kosong.")
+with open(TOPIC_FILE, "r", encoding="utf-8") as f:
+    topic = f.read().strip()
 
-# Ambil beberapa kata penting dari script
-stopwords = {
-    "the", "and", "that", "this", "with", "from", "your",
-    "have", "will", "are", "for", "you", "they", "their",
-    "about", "into", "what", "when", "which", "while",
-    "also", "more", "than", "can", "may", "our", "how",
-    "why", "just", "like", "does", "its", "it's", "not",
-    "but", "one", "two", "three", "these", "those"
-}
+if not topic:
+    raise RuntimeError("topic.txt kosong.")
 
-words = re.findall(r"[a-zA-Z]+", script.lower())
-
-important_words = []
-
-for word in words:
-    if len(word) >= 4 and word not in stopwords:
-        if word not in important_words:
-            important_words.append(word)
-
-# Maksimal 4 kata utama
-keywords = important_words[:4]
-
-if not keywords:
-    keywords = ["healthy food"]
-
-query = " ".join(keywords) + " healthy food"
+# Tambahkan kata yang membantu pencarian footage
+query = f"{topic} healthy food"
 
 print("======================================")
 print("PIXABAY SEARCH")
+print(f"Topic: {topic}")
 print(f"Query: {query}")
 print("======================================")
 
@@ -69,10 +48,10 @@ data = response.json()
 hits = data.get("hits", [])
 
 if not hits:
-    print("Query utama tidak menemukan video.")
-    print("Mencoba fallback search...")
+    print("Pencarian utama tidak menemukan video.")
+    print("Mencoba pencarian berdasarkan topic saja...")
 
-    params["q"] = keywords[0] if keywords else "healthy food"
+    params["q"] = topic
 
     response = requests.get(url, params=params, timeout=30)
     response.raise_for_status()
@@ -81,9 +60,9 @@ if not hits:
     hits = data.get("hits", [])
 
 if not hits:
-    raise RuntimeError("Pixabay tidak menemukan video yang sesuai.")
+    raise RuntimeError("Pixabay tidak menemukan video.")
 
-# Bersihkan clip lama
+# Hapus clip lama
 for filename in os.listdir(OUTPUT_DIR):
     if filename.endswith(".mp4"):
         os.remove(os.path.join(OUTPUT_DIR, filename))
@@ -91,6 +70,7 @@ for filename in os.listdir(OUTPUT_DIR):
 downloaded = 0
 
 for item in hits:
+
     videos = item.get("videos", {})
 
     video_info = (
@@ -108,6 +88,7 @@ for item in hits:
         continue
 
     downloaded += 1
+
     output_file = os.path.join(
         OUTPUT_DIR,
         f"clip_{downloaded:02d}.mp4"
@@ -133,5 +114,6 @@ if downloaded == 0:
 
 print("======================================")
 print(f"Berhasil download {downloaded} video clips.")
-print(f"Query digunakan: {query}")
+print(f"Topic: {topic}")
+print(f"Query: {query}")
 print("======================================")
