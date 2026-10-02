@@ -1,40 +1,58 @@
-import subprocess
 import os
+import subprocess
+import glob
 
-voice = "output/voice.wav"
-visual = "output/visual.jpg"
-video = "output/short.mp4"
+CLIPS_DIR = "output/clips"
+VOICE_FILE = "output/voice.wav"
+OUTPUT_FILE = "output/short.mp4"
 
-if not os.path.exists(voice):
-    raise RuntimeError("voice.wav not found")
+os.makedirs("output", exist_ok=True)
 
-if not os.path.exists(visual):
-    raise RuntimeError("visual.jpg not found")
+clips = sorted(glob.glob(f"{CLIPS_DIR}/clip_*.mp4"))
 
-cmd = [
+if not clips:
+    raise RuntimeError("Tidak ada video clip ditemukan di output/clips/")
+
+print(f"Ditemukan {len(clips)} video clips.")
+
+# Buat file daftar untuk FFmpeg
+list_file = "output/clips.txt"
+
+with open(list_file, "w") as f:
+    for clip in clips:
+        absolute_path = os.path.abspath(clip)
+        f.write(f"file '{absolute_path}'\n")
+
+# Gabungkan semua video
+temp_video = "output/combined.mp4"
+
+subprocess.run([
     "ffmpeg",
     "-y",
-    "-loop", "1",
-    "-i", visual,
-    "-i", voice,
-    "-vf",
-    "scale=1080:1920:force_original_aspect_ratio=increase,"
-    "crop=1080:1920",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", list_file,
     "-c:v", "libx264",
     "-preset", "veryfast",
     "-pix_fmt", "yuv420p",
+    temp_video
+], check=True)
+
+# Gabungkan video dengan voice-over
+subprocess.run([
+    "ffmpeg",
+    "-y",
+    "-i", temp_video,
+    "-i", VOICE_FILE,
+    "-map", "0:v:0",
+    "-map", "1:a:0",
+    "-c:v", "copy",
     "-c:a", "aac",
-    "-b:a", "128k",
     "-shortest",
-    video
-]
+    OUTPUT_FILE
+], check=True)
 
-print("Creating Shorts video with visual...")
-
-result = subprocess.run(cmd)
-
-if result.returncode != 0:
-    raise RuntimeError("FFmpeg failed")
-
-print("VIDEO WITH VISUAL GENERATED SUCCESSFULLY")
-print(video)
+print("====================================")
+print("VIDEO BERHASIL DIBUAT")
+print(f"Output: {OUTPUT_FILE}")
+print("====================================")
