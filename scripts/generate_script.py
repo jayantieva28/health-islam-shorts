@@ -1,73 +1,80 @@
 import os
-import json
-import urllib.request
+import requests
 
 os.makedirs("output", exist_ok=True)
 
-API_KEY = os.environ["OPENROUTER_API_KEY"]
+API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
-TOPIC = "Benefits of eating oats"
+if not API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY belum tersedia.")
 
+MODEL = "openrouter/free"
+
+topic = "Benefits of eating oats"
+
+# Simpan topic untuk digunakan oleh video search
 with open("output/topic.txt", "w", encoding="utf-8") as f:
     f.write(topic)
 
-PROMPT = f"""
-You are a professional health content writer for an English YouTube Shorts channel.
+prompt = f"""
+Create a 45-60 second YouTube Shorts script in English.
 
-TOPIC:
-{TOPIC}
+Topic:
+{topic}
 
-Create a 45-60 second YouTube Shorts script.
-
-REQUIREMENTS:
-- Write in simple, natural English.
-- Start with a strong attention-grabbing hook.
-- Explain the main health information clearly.
-- Use evidence-based nutrition information.
-- Never claim that a food, herb, or natural remedy can cure a disease.
-- Never exaggerate health benefits.
-- Never invent scientific facts.
-- Do not provide dangerous medical advice.
-- Do not recommend replacing prescribed treatment.
-- Use cautious wording when evidence is limited.
-- Include one practical takeaway.
-- End with a short call to action.
-- Do not mention these instructions.
-- Return ONLY the finished script.
+Requirements:
+- Strong opening hook.
+- Evidence-based nutrition information.
+- Use cautious and accurate wording.
+- Do not claim that food cures or treats diseases.
+- Do not exaggerate health benefits.
+- Do not invent scientific facts.
+- Do not give dangerous medical advice.
+- Do not tell viewers to stop prescribed treatment.
+- Give one practical takeaway.
+- End with a simple call to action.
+- Output ONLY the script.
 """
 
 url = "https://openrouter.ai/api/v1/chat/completions"
 
-data = {
-    "model": "openrouter/free",
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+payload = {
+    "model": MODEL,
     "messages": [
         {
             "role": "user",
-            "content": PROMPT
+            "content": prompt
         }
     ]
 }
 
-request = urllib.request.Request(
+response = requests.post(
     url,
-    data=json.dumps(data).encode("utf-8"),
-    headers={
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    },
-    method="POST"
+    headers=headers,
+    json=payload,
+    timeout=120
 )
 
-with urllib.request.urlopen(request, timeout=120) as response:
-    result = json.loads(response.read().decode("utf-8"))
+response.raise_for_status()
 
-script = result["choices"][0]["message"]["content"]
+data = response.json()
 
-os.makedirs("output", exist_ok=True)
+script = data["choices"][0]["message"]["content"].strip()
 
-with open("output/script.txt", "w", encoding="utf-8") as file:
-    file.write(script)
+if not script:
+    raise RuntimeError("AI menghasilkan script kosong.")
 
-print("SCRIPT GENERATED SUCCESSFULLY")
-print()
-print(script)
+with open("output/script.txt", "w", encoding="utf-8") as f:
+    f.write(script)
+
+print("======================================")
+print("SCRIPT BERHASIL DIBUAT")
+print(f"Topic: {topic}")
+print("Saved: output/script.txt")
+print("Saved: output/topic.txt")
+print("======================================")
