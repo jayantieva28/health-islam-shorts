@@ -52,10 +52,6 @@ jobs:
           name: video-clips
           path: output/clips/
 
-      - name: Create Shorts video
-        run: |
-          python3 scripts/make_video.py
-
       - name: Show generated files
         run: |
           ls -lh output/
