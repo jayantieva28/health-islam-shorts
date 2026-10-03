@@ -750,7 +750,7 @@ def create_final_video(
     # Fade in/out.
     cta_duration = 2.8
 
-    cta_filter = (
+        cta_filter = (
         "drawtext="
         "fontfile=/usr/share/fonts/truetype/dejavu/"
         "DejaVuSans-Bold.ttf:"
@@ -761,13 +761,12 @@ def create_final_video(
         "bordercolor=black:"
         "x=(w-text_w)/2:"
         "y=h*0.82:"
-        f"enable='between(t,{cta_start:.3f},{voice_duration:.3f})':"
-        "alpha="
-        f"if(lt(t,{cta_start:.3f}),0,"
-        f"if(lt(t,{cta_start + 0.5:.3f}),"
-        f"(t-{cta_start:.3f})/0.5,"
-        f"if(gt(t,{voice_duration - 0.5:.3f}),"
-        f"({voice_duration:.3f}-t)/0.5,1)))"
+        f"enable='between(t\\,{cta_start:.3f}\\,{voice_duration:.3f})':"
+        f"alpha='if(lt(t\\,{cta_start:.3f})\\,0\\,"
+        f"if(lt(t\\,{cta_start + 0.5:.3f})\\,"
+        f"(t-{cta_start:.3f})/0.5\\,"
+        f"if(gt(t\\,{voice_duration - 0.5:.3f})\\,"
+        f"({voice_duration:.3f}-t)/0.5\\,1)))'"
     )
 
     # --------------------------------------------------------
