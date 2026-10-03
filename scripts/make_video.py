@@ -1,144 +1,275 @@
 import os
-import glob
+import re
 import subprocess
-import math
+from pathlib import Path
 
-CLIPS_DIR = "output/clips"
-VOICE_FILE = "output/voice.wav"
-OUTPUT_FILE = "output/short.mp4"
-TEMP_DIR = "output/normalized"
+OUTPUT_DIR = Path("output")
+CLIPS_DIR = OUTPUT_DIR / "clips"
 
-os.makedirs(TEMP_DIR, exist_ok=True)
-os.makedirs("output", exist_ok=True)
+VOICE = OUTPUT_DIR / "voice.wav"
+SCRIPT = OUTPUT_DIR / "script.txt"
+SRT = OUTPUT_DIR / "subtitles.srt"
+CONCAT = OUTPUT_DIR / "combined.mp4"
+FINAL = OUTPUT_DIR / "short.mp4"
 
-clips = sorted(glob.glob(f"{CLIPS_DIR}/clip_*.mp4"))
+WATERMARK = "Tayyib Health Notes"
 
-if not clips:
-    raise RuntimeError("Tidak ada video clip ditemukan.")
 
-print(f"Ditemukan {len(clips)} video clips.")
+def run(cmd):
+    print("RUN:", " ".join(str(x) for x in cmd))
+    subprocess.run(cmd, check=True)
 
-# --------------------------------------------------
-# 1. Cek durasi voice-over
-# --------------------------------------------------
 
-voice_duration = float(subprocess.check_output([
-    "ffprobe",
-    "-v", "error",
-    "-show_entries", "format=duration",
-    "-of", "default=noprint_wrappers=1:nokey=1",
-    VOICE_FILE
-]).decode().strip())
-
-print(f"Durasi voice-over: {voice_duration:.2f} detik")
-
-# --------------------------------------------------
-# 2. Normalisasi semua video
-# --------------------------------------------------
-
-normalized = []
-
-for i, clip in enumerate(clips, start=1):
-
-    output = f"{TEMP_DIR}/clip_{i:02d}.mp4"
-
-    print(f"Memproses clip {i}: {clip}")
-
-    subprocess.run([
-        "ffmpeg",
-        "-y",
-        "-i", clip,
-        "-t", "8",
-        "-vf",
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,"
-        "fps=30,"
-        "setsar=1",
-        "-an",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        "-movflags", "+faststart",
-        output
-    ], check=True)
-
-    normalized.append(output)
-
-# --------------------------------------------------
-# 3. Ulangi clip sampai cukup untuk voice-over
-# --------------------------------------------------
-
-selected = []
-duration_total = 0
-
-while duration_total < voice_duration + 1:
-    for clip in normalized:
-        selected.append(clip)
-
-        duration = float(subprocess.check_output([
+def get_duration(file):
+    result = subprocess.run(
+        [
             "ffprobe",
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
-            clip
-        ]).decode().strip())
+            str(file)
+        ],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    return float(result.stdout.strip())
 
-        duration_total += duration
 
-        if duration_total >= voice_duration + 1:
+def timestamp(seconds):
+    ms = int(round((seconds - int(seconds)) * 1000))
+    total = int(seconds)
+
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+
+    if ms >= 1000:
+        secs += 1
+        ms -= 1000
+
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
+
+
+def create_subtitles(script_text, duration):
+    # Bersihkan script
+    text = re.sub(r"\s+", " ", script_text).strip()
+
+    # Pecah berdasarkan kalimat
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+
+    chunks = []
+
+    for sentence in sentences:
+        words = sentence.split()
+
+        # Maksimum sekitar 9 kata per subtitle
+        for i in range(0, len(words), 9):
+            chunk = " ".join(words[i:i + 9]).strip()
+            if chunk:
+                chunks.append(chunk)
+
+    if not chunks:
+        raise RuntimeError("Tidak ada teks untuk subtitle.")
+
+    # Durasi tiap subtitle berdasarkan panjang teks
+    weights = [max(len(x), 1) for x in chunks]
+    total_weight = sum(weights)
+
+    current = 0.0
+    entries = []
+
+    for index, (chunk, weight) in enumerate(zip(chunks, weights), start=1):
+        if index == len(chunks):
+            end = duration
+        else:
+            end = current + duration * weight / total_weight
+
+        entries.append(
+            f"{index}\n"
+            f"{timestamp(current)} --> {timestamp(end)}\n"
+            f"{chunk}\n"
+        )
+
+        current = end
+
+    SRT.write_text("\n".join(entries), encoding="utf-8")
+
+    print(f"Subtitle dibuat: {SRT}")
+    print(f"Jumlah subtitle: {len(chunks)}")
+
+
+# ============================================================
+# 1. CHECK FILE
+# ============================================================
+
+if not VOICE.exists():
+    raise RuntimeError("voice.wav tidak ditemukan.")
+
+if not SCRIPT.exists():
+    raise RuntimeError("script.txt tidak ditemukan.")
+
+clips = sorted(CLIPS_DIR.glob("clip_*.mp4"))
+
+if not clips:
+    raise RuntimeError("Tidak ada video clips ditemukan.")
+
+print(f"Ditemukan {len(clips)} video clips.")
+
+
+# ============================================================
+# 2. VOICE DURATION
+# ============================================================
+
+voice_duration = get_duration(VOICE)
+
+print(f"Durasi voice: {voice_duration:.2f} detik")
+
+
+# ============================================================
+# 3. NORMALIZE VIDEO CLIPS
+# ============================================================
+
+normalized_dir = OUTPUT_DIR / "normalized"
+normalized_dir.mkdir(exist_ok=True)
+
+normalized = []
+
+total_duration = 0
+index = 1
+
+while total_duration < voice_duration + 1:
+    for clip in clips:
+
+        output = normalized_dir / f"clip_{index:03d}.mp4"
+
+        run([
+            "ffmpeg",
+            "-y",
+            "-i", str(clip),
+            "-vf",
+            "scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "setsar=1",
+            "-r", "30",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            str(output)
+        ])
+
+        normalized.append(output)
+
+        duration = get_duration(output)
+        total_duration += duration
+
+        print(f"Normalized clip {index}: {duration:.2f}s")
+
+        index += 1
+
+        if total_duration >= voice_duration + 1:
             break
 
-print(f"Total durasi video sebelum voice: {duration_total:.2f} detik")
 
-# --------------------------------------------------
-# 4. Buat daftar concat
-# --------------------------------------------------
+# ============================================================
+# 4. CREATE CONCAT LIST
+# ============================================================
 
-list_file = "output/video_list.txt"
+concat_file = OUTPUT_DIR / "concat.txt"
 
-with open(list_file, "w") as f:
-    for clip in selected:
-        f.write(f"file '{os.path.abspath(clip)}'\n")
+with open(concat_file, "w", encoding="utf-8") as f:
+    for clip in normalized:
+        absolute_path = clip.resolve()
+        f.write(f"file '{absolute_path}'\n")
 
-# --------------------------------------------------
-# 5. Gabungkan video
-# --------------------------------------------------
 
-combined = "output/combined.mp4"
+# ============================================================
+# 5. CONCAT VIDEO
+# ============================================================
 
-subprocess.run([
+run([
     "ffmpeg",
     "-y",
     "-f", "concat",
     "-safe", "0",
-    "-i", list_file,
+    "-i", str(concat_file),
     "-c", "copy",
-    "-an",
-    combined
-], check=True)
+    str(CONCAT)
+])
 
-# --------------------------------------------------
-# 6. Gabungkan video + voice-over
-# --------------------------------------------------
 
-subprocess.run([
+# ============================================================
+# 6. CREATE SUBTITLE FILE
+# ============================================================
+
+script_text = SCRIPT.read_text(encoding="utf-8")
+
+create_subtitles(
+    script_text,
+    voice_duration
+)
+
+
+# ============================================================
+# 7. ADD VOICE + SUBTITLE + WATERMARK
+# ============================================================
+
+subtitle_filter = (
+    "subtitles=output/subtitles.srt:"
+    "force_style='"
+    "FontName=DejaVu Sans,"
+    "FontSize=18,"
+    "PrimaryColour=&H00FFFFFF,"
+    "OutlineColour=&H00000000,"
+    "Outline=3,"
+    "Shadow=1,"
+    "Alignment=2,"
+    "MarginV=150"
+    "'"
+)
+
+watermark_filter = (
+    "drawtext="
+    "text='Tayyib Health Notes':"
+    "fontcolor=white@0.65:"
+    "fontsize=32:"
+    "x=w-tw-45:"
+    "y=55:"
+    "shadowcolor=black@0.5:"
+    "shadowx=2:"
+    "shadowy=2"
+)
+
+video_filter = f"{subtitle_filter},{watermark_filter}"
+
+
+run([
     "ffmpeg",
     "-y",
-    "-i", combined,
-    "-i", VOICE_FILE,
+    "-i", str(CONCAT),
+    "-i", str(VOICE),
+    "-vf", video_filter,
     "-map", "0:v:0",
     "-map", "1:a:0",
-    "-c:v", "copy",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "23",
+    "-pix_fmt", "yuv420p",
     "-c:a", "aac",
     "-b:a", "128k",
     "-shortest",
     "-movflags", "+faststart",
-    OUTPUT_FILE
-], check=True)
+    str(FINAL)
+])
 
+
+print("")
 print("======================================")
-print("SHORTS BERHASIL DIBUAT")
-print(f"Output: {OUTPUT_FILE}")
-print(f"Durasi voice: {voice_duration:.2f} detik")
-print("Format: 1080x1920 / 9:16 / 30 FPS")
+print("VIDEO BERHASIL DIBUAT")
+print("======================================")
+print(f"Video    : {FINAL}")
+print(f"Subtitle : {SRT}")
+print(f"Watermark: {WATERMARK}")
 print("======================================")
