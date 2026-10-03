@@ -3,6 +3,15 @@ name: Generate Video
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "0 7 * * *"
+    - cron: "0 13 * * *"
+
+concurrency:
+  group: tayyib-health-notes-video
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
