@@ -67,6 +67,7 @@ Topic:
 {selected_topic}
 
 Requirements:
+- Write ONLY the spoken narration.
 - Start with a strong but accurate hook.
 - Give useful, evidence-based information.
 - Use cautious scientific wording.
@@ -81,8 +82,23 @@ Requirements:
   not as scientific proof of a medical effect.
 - Give one practical takeaway.
 - End with a simple call to action.
-- Keep the script natural for spoken English.
-- Output ONLY the script.
+- Keep the narration natural for spoken English.
+
+STRICT OUTPUT RULES:
+- Output ONLY the words that the narrator should speak.
+- Do NOT include scene directions.
+- Do NOT include camera directions.
+- Do NOT include "[Scene: ...]".
+- Do NOT include "[Cut to ...]".
+- Do NOT include "[Music ...]".
+- Do NOT include "[Text overlay ...]".
+- Do NOT include production notes.
+- Do NOT include headings such as "Hook", "Intro", "Islamic Teaching", or "CTA".
+- Do NOT use Markdown.
+- Do NOT use asterisks for emphasis.
+- Do NOT use bullet points.
+- Do NOT use speaker labels.
+- Do NOT include quotation marks around the narration.
 """
 
 url = "https://openrouter.ai/api/v1/chat/completions"
