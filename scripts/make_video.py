@@ -750,7 +750,7 @@ def create_final_video(
     # Fade in/out.
     cta_duration = 2.8
 
-        cta_filter = (
+    cta_filter = (
         "drawtext="
         "fontfile=/usr/share/fonts/truetype/dejavu/"
         "DejaVuSans-Bold.ttf:"
