@@ -1,40 +1,52 @@
 import os
 import re
-import glob
 import subprocess
 import math
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
+
+OUTPUT_DIR = "output"
+CLIPS_DIR = "output/clips"
 
 VOICE_FILE = "output/voice.wav"
-CLIPS_DIR = "output/clips"
-OUTPUT_DIR = "output"
+THUMBNAIL_FILE = "output/thumbnail.jpg"
+SCRIPT_FILE = "output/script.txt"
 
 FINAL_VIDEO = "output/short.mp4"
-BASE_VIDEO = "output/video_base.mp4"
-CONCAT_FILE = "output/segments.txt"
-SUBTITLE_FILE = "output/subtitles.srt"
 
-MIN_CLIPS = 5
-
-VIDEO_WIDTH = 1080
-VIDEO_HEIGHT = 1920
+WIDTH = 1080
+HEIGHT = 1920
 FPS = 30
 
+# Opening photo duration
+PHOTO_DURATION = 2.0
+
+# Transition duration
+TRANSITION = 0.35
+
+# Minimum number of clips required
+MIN_CLIPS = 7
+
+# Subtitle settings
+SUBTITLE_FONT = "DejaVu Sans"
+SUBTITLE_SIZE = 12
+SUBTITLE_MARGIN_V = 70
+
 
 # ============================================================
-# HELPERS
+# RUN COMMAND
 # ============================================================
 
-def run_command(command):
-    print("\nRunning:")
-    print(" ".join(command))
+def run(cmd):
+
+    print("\nRUNNING:")
+    print(" ".join(str(x) for x in cmd))
 
     result = subprocess.run(
-        command,
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True
@@ -44,21 +56,30 @@ def run_command(command):
 
     if result.returncode != 0:
         raise RuntimeError(
-            "Command failed:\n" + " ".join(command)
+            "Command gagal:\n" +
+            " ".join(str(x) for x in cmd)
         )
 
 
+# ============================================================
+# GET MEDIA DURATION
+# ============================================================
+
 def get_duration(filename):
-    command = [
+
+    cmd = [
         "ffprobe",
-        "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
         filename
     ]
 
     result = subprocess.run(
-        command,
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -66,367 +87,715 @@ def get_duration(filename):
 
     if result.returncode != 0:
         raise RuntimeError(
-            f"Unable to read duration: {filename}"
+            f"Gagal membaca durasi: {filename}"
         )
 
-    return float(result.stdout.strip())
+    try:
+        return float(result.stdout.strip())
+    except:
+        raise RuntimeError(
+            f"Durasi tidak valid: {filename}"
+        )
 
+
+# ============================================================
+# GET VOICE DURATION
+# ============================================================
+
+def get_voice_duration():
+
+    duration = get_duration(
+        VOICE_FILE
+    )
+
+    print(
+        f"\nVoice duration: {duration:.2f} seconds"
+    )
+
+    return duration
+
+
+# ============================================================
+# FIND ALL VIDEO CLIPS
+# ============================================================
+
+def get_clips():
+
+    if not os.path.isdir(CLIPS_DIR):
+        raise RuntimeError(
+            f"Folder tidak ditemukan: {CLIPS_DIR}"
+        )
+
+    clips = []
+
+    for filename in os.listdir(CLIPS_DIR):
+
+        if filename.lower().endswith(".mp4"):
+
+            clips.append(
+                os.path.join(
+                    CLIPS_DIR,
+                    filename
+                )
+            )
+
+    # Natural sorting: clip_01, clip_02, ...
+    def sort_key(path):
+
+        name = os.path.basename(path)
+
+        numbers = re.findall(
+            r"\d+",
+            name
+        )
+
+        if numbers:
+            return int(numbers[-1])
+
+        return 999999
+
+    clips.sort(
+        key=sort_key
+    )
+
+    print(
+        f"\nVideo clips found: {len(clips)}"
+    )
+
+    for clip in clips:
+        print(
+            " -",
+            clip
+        )
+
+    if len(clips) < MIN_CLIPS:
+
+        raise RuntimeError(
+            f"Minimal {MIN_CLIPS} video diperlukan. "
+            f"Hanya ditemukan {len(clips)}."
+        )
+
+    return clips
+
+
+# ============================================================
+# CREATE SUBTITLE FILE
+# ============================================================
 
 def format_srt_time(seconds):
-    milliseconds = int(round((seconds - int(seconds)) * 1000))
+
+    milliseconds = int(
+        round(
+            (seconds - int(seconds)) * 1000
+        )
+    )
 
     total_seconds = int(seconds)
 
     hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
+
+    minutes = (
+        total_seconds % 3600
+    ) // 60
+
     secs = total_seconds % 60
 
-    if milliseconds >= 1000:
-        milliseconds = 0
-        secs += 1
-
-        if secs >= 60:
-            secs = 0
-            minutes += 1
-
-        if minutes >= 60:
-            minutes = 0
-            hours += 1
-
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+    return (
+        f"{hours:02d}:"
+        f"{minutes:02d}:"
+        f"{secs:02d},"
+        f"{milliseconds:03d}"
+    )
 
 
-# ============================================================
-# CLEAN SCRIPT FOR SUBTITLES
-# ============================================================
+def create_subtitles(
+    voice_duration
+):
 
-def clean_script_for_subtitles(text):
-
-    # Remove markdown bold/italic markers
-    text = text.replace("**", "")
-    text = text.replace("__", "")
-    text = text.replace("*", "")
-    text = text.replace("_", "")
-
-    # Remove common production notes
-    lines = []
-
-    for line in text.splitlines():
-
-        line = line.strip()
-
-        if not line:
-            continue
-
-        # Remove lines like:
-        # [Scene: ...]
-        # [Cut to ...]
-        # [Music ...]
-        if line.startswith("[") and line.endswith("]"):
-            continue
-
-        # Remove common headings
-        lower = line.lower()
-
-        if lower in [
-            "hook:",
-            "intro:",
-            "introduction:",
-            "body:",
-            "main:",
-            "cta:",
-            "call to action:",
-            "islamic teaching:",
-            "conclusion:",
-            "outro:"
-        ]:
-            continue
-
-        # Remove lines beginning with production labels
-        if lower.startswith("[scene"):
-            continue
-
-        if lower.startswith("[cut"):
-            continue
-
-        if lower.startswith("[music"):
-            continue
-
-        if lower.startswith("[camera"):
-            continue
-
-        if lower.startswith("[text overlay"):
-            continue
-
-        lines.append(line)
-
-    text = " ".join(lines)
-
-    # Remove remaining bracketed notes
-    text = re.sub(r"\[[^\]]*\]", "", text)
-
-    # Remove repeated whitespace
-    text = re.sub(r"\s+", " ", text).strip()
-
-    return text
-
-
-# ============================================================
-# CREATE SUBTITLES
-# ============================================================
-
-def create_subtitles(script, voice_duration):
-
-    print("\n======================================")
-    print("CREATING SUBTITLES")
-    print("======================================")
-
-    clean_text = clean_script_for_subtitles(script)
-
-    if not clean_text:
+    if not os.path.exists(
+        SCRIPT_FILE
+    ):
         raise RuntimeError(
-            "No usable narration text found for subtitles."
+            "script.txt tidak ditemukan."
         )
 
-    words = clean_text.split()
+    with open(
+        SCRIPT_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
 
-    # Maximum 5 words per subtitle
+        script = f.read().strip()
+
+    # Remove accidental production notes
+    script = re.sub(
+        r"\[[^\]]*\]",
+        "",
+        script
+    )
+
+    script = re.sub(
+        r"\*\*",
+        "",
+        script
+    )
+
+    script = re.sub(
+        r"\s+",
+        " ",
+        script
+    ).strip()
+
+    words = script.split()
+
+    # EXACTLY 5 WORDS PER SUBTITLE CHUNK
     chunks = []
 
-    for i in range(0, len(words), 5):
-        chunk = " ".join(words[i:i + 5]).strip()
+    for i in range(
+        0,
+        len(words),
+        5
+    ):
+
+        chunk = " ".join(
+            words[i:i + 5]
+        ).strip()
 
         if chunk:
             chunks.append(chunk)
 
     if not chunks:
         raise RuntimeError(
-            "Unable to create subtitle chunks."
+            "Tidak ada teks untuk subtitle."
         )
 
-    # Estimate subtitle timing based on character length.
-    # This keeps longer sentences visible slightly longer.
-    weights = [
-        max(len(chunk), 1)
-        for chunk in chunks
-    ]
+    subtitle_file = (
+        "output/subtitles.srt"
+    )
 
-    total_weight = sum(weights)
-
-    current_time = 0.0
-
-    subtitle_entries = []
-
-    for index, (chunk, weight) in enumerate(zip(chunks, weights)):
-
-        duration = voice_duration * (weight / total_weight)
-
-        start = current_time
-        end = current_time + duration
-
-        # Keep the last subtitle exactly aligned with voice duration.
-        if index == len(chunks) - 1:
-            end = voice_duration
-
-        subtitle_entries.append(
-            (
-                index + 1,
-                start,
-                end,
-                chunk
-            )
-        )
-
-        current_time = end
+    # Divide subtitle timing across voice.
+    chunk_duration = (
+        voice_duration /
+        len(chunks)
+    )
 
     with open(
-        SUBTITLE_FILE,
+        subtitle_file,
         "w",
         encoding="utf-8"
     ) as f:
 
-        for number, start, end, text in subtitle_entries:
+        for index, chunk in enumerate(
+            chunks,
+            start=1
+        ):
 
-            f.write(
-                f"{number}\n"
-                f"{format_srt_time(start)} --> "
-                f"{format_srt_time(end)}\n"
-                f"{text}\n\n"
+            start = (
+                (index - 1)
+                * chunk_duration
             )
 
-    print(f"Created {len(subtitle_entries)} subtitle entries.")
-    print(f"Saved: {SUBTITLE_FILE}")
+            end = (
+                index
+                * chunk_duration
+            )
 
+            # Prevent final subtitle
+            # from exceeding voice duration.
+            end = min(
+                end,
+                voice_duration
+            )
 
-# ============================================================
-# FIND VIDEO CLIPS
-# ============================================================
+            f.write(
+                f"{index}\n"
+            )
 
-def get_video_clips():
+            f.write(
+                f"{format_srt_time(start)} --> "
+                f"{format_srt_time(end)}\n"
+            )
 
-    clips = sorted(
-        glob.glob(
-            os.path.join(CLIPS_DIR, "*.mp4")
-        )
+            f.write(
+                f"{chunk}\n\n"
+            )
+
+    print(
+        f"\nSubtitles created: "
+        f"{subtitle_file}"
     )
 
-    if len(clips) < MIN_CLIPS:
+    print(
+        f"Subtitle chunks: {len(chunks)}"
+    )
 
+    return subtitle_file
+
+
+# ============================================================
+# DETECT FINAL CTA
+# ============================================================
+
+def detect_cta():
+
+    if not os.path.exists(
+        SCRIPT_FILE
+    ):
+        return []
+
+    with open(
+        SCRIPT_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
+        script = f.read().lower()
+
+    # Focus on the ending of the script.
+    words = script[-500:]
+
+    cta_items = []
+
+    if "subscribe" in words:
+        cta_items.append(
+            "SUBSCRIBE"
+        )
+
+    if "like" in words:
+        cta_items.append(
+            "LIKE"
+        )
+
+    if "share" in words:
+        cta_items.append(
+            "SHARE"
+        )
+
+    if "follow" in words:
+        cta_items.append(
+            "FOLLOW"
+        )
+
+    # Avoid showing unrelated CTA.
+    if not cta_items:
+        cta_items = [
+            "SUBSCRIBE"
+        ]
+
+    print(
+        "\nDetected CTA:",
+        " • ".join(cta_items)
+    )
+
+    return cta_items
+
+
+# ============================================================
+# PREPARE WORKING DIRECTORIES
+# ============================================================
+
+def prepare_directories():
+
+    os.makedirs(
+        "output/segments",
+        exist_ok=True
+    )
+
+    # Remove old generated segments.
+    for filename in os.listdir(
+        "output/segments"
+    ):
+
+        path = os.path.join(
+            "output/segments",
+            filename
+        )
+
+        if os.path.isfile(path):
+            os.remove(path)
+
+
+# ============================================================
+# CREATE OPENING PHOTO
+# ============================================================
+
+def create_photo_segment():
+
+    output = (
+        "output/segments/segment_00.mp4"
+    )
+
+    print(
+        "\nCreating opening photo..."
+    )
+
+    # Slight zoom effect.
+    vf = (
+        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        "zoompan="
+        "z='min(zoom+0.0008,1.08)':"
+        "x='iw/2-(iw/zoom/2)':"
+        "y='ih/2-(ih/zoom/2)':"
+        "d=1:"
+        "s=1080x1920:"
+        "fps=30,"
+        "fade=t=out:st=1.65:d=0.35"
+    )
+
+    run([
+        "ffmpeg",
+        "-y",
+        "-loop",
+        "1",
+        "-i",
+        THUMBNAIL_FILE,
+        "-t",
+        str(PHOTO_DURATION),
+        "-vf",
+        vf,
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-pix_fmt",
+        "yuv420p",
+        output
+    ])
+
+    return output
+
+
+# ============================================================
+# CREATE VIDEO SEGMENTS
+# ============================================================
+
+def create_video_segments(
+    clips,
+    voice_duration
+):
+
+    # Time available after opening photo.
+    available_duration = (
+        voice_duration -
+        PHOTO_DURATION
+    )
+
+    if available_duration <= 5:
         raise RuntimeError(
-            f"Minimal {MIN_CLIPS} footage diperlukan, "
-            f"tetapi hanya ditemukan {len(clips)} footage."
+            "Voice terlalu pendek."
         )
 
-    print("\n======================================")
-    print("VIDEO CLIPS")
-    print("======================================")
+    # Get original durations.
+    durations = []
 
-    for index, clip in enumerate(clips, start=1):
-        print(f"{index}. {clip}")
+    for clip in clips:
 
-    selected = clips[:MIN_CLIPS]
+        duration = get_duration(
+            clip
+        )
 
-    print("\nFootage yang akan digunakan:")
+        durations.append(
+            duration
+        )
 
-    for index, clip in enumerate(selected, start=1):
-        print(f"{index}. {os.path.basename(clip)}")
+        print(
+            f"\n{os.path.basename(clip)} "
+            f"duration = {duration:.2f}s"
+        )
 
-    return selected
-
-
-# ============================================================
-# CREATE 5 VIDEO SEGMENTS
-# ============================================================
-
-def create_segments(clips, voice_duration):
-
-    print("\n======================================")
-    print("CREATING 5 VIDEO SEGMENTS")
-    print("======================================")
-
-    segment_duration = voice_duration / len(clips)
-
-    print(
-        f"Voice duration: {voice_duration:.2f} seconds"
+    total_source_duration = sum(
+        durations
     )
 
     print(
-        f"Each footage duration: {segment_duration:.2f} seconds"
+        "\nTotal original video duration:",
+        f"{total_source_duration:.2f}s"
     )
+
+    print(
+        "Required video duration:",
+        f"{available_duration:.2f}s"
+    )
+
+    # --------------------------------------------------------
+    # Allocate duration proportionally.
+    #
+    # This ensures ALL downloaded videos are used.
+    # --------------------------------------------------------
+
+    target_durations = []
+
+    for duration in durations:
+
+        target = (
+            available_duration
+            * duration
+            / total_source_duration
+        )
+
+        target_durations.append(
+            target
+        )
 
     segment_files = []
 
-    for index, clip in enumerate(clips, start=1):
+    for index, (
+        clip,
+        source_duration,
+        target_duration
+    ) in enumerate(
+        zip(
+            clips,
+            durations,
+            target_durations
+        ),
+        start=1
+    ):
 
-        output_file = os.path.join(
-            OUTPUT_DIR,
+        output = (
+            f"output/segments/"
             f"segment_{index:02d}.mp4"
         )
 
-        print("\n--------------------------------------")
-        print(f"FOOTAGE {index}/{len(clips)}")
-        print(f"Source: {clip}")
-        print(f"Output: {output_file}")
+        print("\n--------------------------------")
+        print(
+            f"Preparing clip {index}"
+        )
 
-        # Loop source if it is shorter than required.
-        # Trim source if it is longer than required.
-        command = [
+        print(
+            f"Source: {source_duration:.2f}s"
+        )
+
+        print(
+            f"Target: {target_duration:.2f}s"
+        )
+
+        # Speed factor:
+        #
+        # If target is longer:
+        # video is slowed down.
+        #
+        # If target is shorter:
+        # video is trimmed.
+        speed_factor = (
+            target_duration /
+            source_duration
+        )
+
+        print(
+            f"Speed factor: "
+            f"{speed_factor:.3f}"
+        )
+
+        # Slight slowdown / speed adjustment.
+        setpts = (
+            f"setpts={speed_factor:.8f}*PTS"
+        )
+
+        # Crop/fill vertical 1080x1920.
+        scale_crop = (
+            "scale=1080:1920:"
+            "force_original_aspect_ratio=increase,"
+            "crop=1080:1920"
+        )
+
+        # Fade first video in.
+        if index == 1:
+
+            fade = (
+                "fade=t=in:"
+                f"st=0:"
+                f"d={TRANSITION}"
+            )
+
+        else:
+
+            fade = "null"
+
+        vf = (
+            f"{setpts},"
+            f"{scale_crop},"
+            f"{fade},"
+            "fps=30,"
+            "format=yuv420p"
+        )
+
+        run([
             "ffmpeg",
             "-y",
-
-            "-stream_loop", "-1",
-            "-i", clip,
-
-            "-t", str(segment_duration),
-
+            "-i",
+            clip,
             "-vf",
-            (
-                "scale="
-                f"{VIDEO_WIDTH}:{VIDEO_HEIGHT}:"
-                "force_original_aspect_ratio=increase,"
-                f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
-                f"fps={FPS},"
-                "setsar=1"
-            ),
-
+            vf,
+            "-t",
+            f"{target_duration:.3f}",
             "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            output
+        ])
 
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
-
-            "-pix_fmt", "yuv420p",
-
-            output_file
-        ]
-
-        run_command(command)
-
-        segment_files.append(output_file)
+        segment_files.append(
+            output
+        )
 
     return segment_files
 
 
 # ============================================================
-# CONCATENATE SEGMENTS
+# CONCATENATE VISUAL SEGMENTS
 # ============================================================
 
-def concatenate_segments(segment_files):
+def concatenate_segments(
+    photo_segment,
+    video_segments
+):
 
-    print("\n======================================")
-    print("CONCATENATING SEGMENTS")
-    print("======================================")
+    all_segments = [
+        photo_segment
+    ] + video_segments
+
+    concat_file = (
+        "output/segments/concat.txt"
+    )
 
     with open(
-        CONCAT_FILE,
+        concat_file,
         "w",
         encoding="utf-8"
     ) as f:
 
-        for segment in segment_files:
+        for segment in all_segments:
 
-            absolute_path = os.path.abspath(segment)
-
-            # Escape single quotes for concat file
-            absolute_path = absolute_path.replace("'", "'\\''")
+            absolute_path = os.path.abspath(
+                segment
+            )
 
             f.write(
                 f"file '{absolute_path}'\n"
             )
 
-    command = [
+    visual_video = (
+        "output/visual.mp4"
+    )
+
+    print(
+        "\nConcatenating all visual segments..."
+    )
+
+    run([
         "ffmpeg",
         "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concat_file,
+        "-c",
+        "copy",
+        visual_video
+    ])
 
-        "-f", "concat",
-        "-safe", "0",
-
-        "-i", CONCAT_FILE,
-
-        "-c", "copy",
-
-        BASE_VIDEO
-    ]
-
-    run_command(command)
+    return visual_video
 
 
 # ============================================================
-# CREATE FINAL VIDEO
+# FINAL VIDEO
 # ============================================================
 
-def create_final_video():
+def create_final_video(
+    visual_video,
+    subtitle_file,
+    voice_duration,
+    cta_items
+):
 
-    print("\n======================================")
-    print("CREATING FINAL SHORT")
-    print("======================================")
+    print(
+        "\nCreating final Shorts video..."
+    )
 
-    # Subtitle style:
-    # - small
-    # - bold
-    # - white
-    # - black outline
-    # - lower-middle position
+    # --------------------------------------------------------
+    # CTA TEXT
+    # --------------------------------------------------------
+
+    cta_text = " • ".join(
+        cta_items
+    )
+
+    # Escape characters for drawtext.
+    cta_text = (
+        cta_text
+        .replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+    )
+
+    # CTA appears during final 2.8 seconds.
+    cta_start = max(
+        0,
+        voice_duration - 2.8
+    )
+
+    # Fade in/out.
+    cta_duration = 2.8
+
+    cta_filter = (
+        "drawtext="
+        "fontfile=/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans-Bold.ttf:"
+        f"text='{cta_text}':"
+        "fontcolor=white:"
+        "fontsize=58:"
+        "borderw=4:"
+        "bordercolor=black:"
+        "x=(w-text_w)/2:"
+        "y=h*0.82:"
+        f"enable='between(t,{cta_start:.3f},{voice_duration:.3f})':"
+        "alpha="
+        f"if(lt(t,{cta_start:.3f}),0,"
+        f"if(lt(t,{cta_start + 0.5:.3f}),"
+        f"(t-{cta_start:.3f})/0.5,"
+        f"if(gt(t,{voice_duration - 0.5:.3f}),"
+        f"({voice_duration:.3f}-t)/0.5,1)))"
+    )
+
+    # --------------------------------------------------------
+    # WATERMARK
+    # --------------------------------------------------------
+
+    watermark_filter = (
+        "drawtext="
+        "fontfile=/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans.ttf:"
+        "text='Tayyib Health Notes':"
+        "fontcolor=white@0.75:"
+        "fontsize=27:"
+        "borderw=2:"
+        "bordercolor=black@0.5:"
+        "x=45:"
+        "y=55"
+    )
+
+    # --------------------------------------------------------
+    # SUBTITLE
+    #
+    # DO NOT CHANGE:
+    # FontSize 12
+    # MarginV 70
+    # 5 words per chunk
+    # --------------------------------------------------------
+
     subtitle_filter = (
         "subtitles=output/subtitles.srt:"
         "force_style='"
@@ -445,51 +814,65 @@ def create_final_video():
         "'"
     )
 
-    # Watermark
-    watermark_filter = (
-        "drawtext="
-        "text='Tayyib Health Notes':"
-        "fontcolor=white@0.65:"
-        "fontsize=32:"
-        "x=w-tw-45:"
-        "y=55:"
-        "shadowcolor=black@0.5:"
-        "shadowx=2:"
-        "shadowy=2"
+    vf = (
+        f"{watermark_filter},"
+        f"{cta_filter},"
+        f"{subtitle_filter}"
     )
 
-    video_filter = (
-        f"{subtitle_filter},"
-        f"{watermark_filter}"
-    )
-
-    command = [
+    run([
         "ffmpeg",
         "-y",
-
-        "-i", BASE_VIDEO,
-        "-i", VOICE_FILE,
-
-        "-vf", video_filter,
-
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-
-        "-c:a", "aac",
-        "-b:a", "128k",
-
-        "-shortest",
-
-        "-movflags", "+faststart",
-
+        "-i",
+        visual_video,
+        "-i",
+        VOICE_FILE,
+        "-t",
+        f"{voice_duration:.3f}",
+        "-vf",
+        vf,
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "22",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-ar",
+        "44100",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
         FINAL_VIDEO
-    ]
+    ])
 
-    run_command(command)
+    print(
+        "\n======================================"
+    )
+
+    print(
+        "FINAL VIDEO CREATED"
+    )
+
+    print(
+        f"Output: {FINAL_VIDEO}"
+    )
+
+    print(
+        f"Duration: {voice_duration:.2f}s"
+    )
+
+    print(
+        "======================================"
+    )
 
 
 # ============================================================
@@ -498,126 +881,114 @@ def create_final_video():
 
 def main():
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    if not os.path.exists(VOICE_FILE):
-        raise RuntimeError(
-            f"Voice file not found: {VOICE_FILE}"
-        )
-
-    if not os.path.isdir(CLIPS_DIR):
-        raise RuntimeError(
-            f"Clips directory not found: {CLIPS_DIR}"
-        )
-
-    # --------------------------------------------------------
-    # 1. Read voice duration
-    # --------------------------------------------------------
-
-    voice_duration = get_duration(VOICE_FILE)
-
-    if voice_duration <= 0:
-        raise RuntimeError(
-            "Voice duration is invalid."
-        )
-
-    print("\n======================================")
-    print("VOICE")
-    print("======================================")
+    print(
+        "\n======================================"
+    )
 
     print(
-        f"Voice duration: {voice_duration:.2f} seconds"
+        "TAYYIB HEALTH NOTES"
+    )
+
+    print(
+        "V6-B VIDEO ASSEMBLER"
+    )
+
+    print(
+        "======================================"
     )
 
     # --------------------------------------------------------
-    # 2. Read script
+    # CHECK FILES
     # --------------------------------------------------------
 
-    script_file = "output/script.txt"
+    required_files = [
+        VOICE_FILE,
+        THUMBNAIL_FILE,
+        SCRIPT_FILE
+    ]
 
-    if not os.path.exists(script_file):
-        raise RuntimeError(
-            f"Script not found: {script_file}"
-        )
+    for filename in required_files:
 
-    with open(
-        script_file,
-        "r",
-        encoding="utf-8"
-    ) as f:
+        if not os.path.exists(filename):
 
-        script = f.read().strip()
-
-    if not script:
-        raise RuntimeError(
-            "Script is empty."
-        )
+            raise RuntimeError(
+                f"File tidak ditemukan: {filename}"
+            )
 
     # --------------------------------------------------------
-    # 3. Create subtitles
+    # PREPARE
     # --------------------------------------------------------
 
-    create_subtitles(
-        script,
+    prepare_directories()
+
+    # --------------------------------------------------------
+    # VOICE
+    # --------------------------------------------------------
+
+    voice_duration = (
+        get_voice_duration()
+    )
+
+    # --------------------------------------------------------
+    # CLIPS
+    # --------------------------------------------------------
+
+    clips = get_clips()
+
+    # --------------------------------------------------------
+    # SUBTITLES
+    # --------------------------------------------------------
+
+    subtitle_file = create_subtitles(
         voice_duration
     )
 
     # --------------------------------------------------------
-    # 4. Get at least 5 clips
+    # CTA
     # --------------------------------------------------------
 
-    clips = get_video_clips()
+    cta_items = detect_cta()
 
     # --------------------------------------------------------
-    # 5. Create exactly 5 required segments
+    # PHOTO
     # --------------------------------------------------------
 
-    segment_files = create_segments(
-        clips,
-        voice_duration
+    photo_segment = (
+        create_photo_segment()
     )
 
     # --------------------------------------------------------
-    # 6. Concatenate all 5 segments
+    # VIDEOS
     # --------------------------------------------------------
 
-    concatenate_segments(
-        segment_files
-    )
-
-    # --------------------------------------------------------
-    # 7. Add voice + subtitles + watermark
-    # --------------------------------------------------------
-
-    create_final_video()
-
-    # --------------------------------------------------------
-    # 8. Verify final output
-    # --------------------------------------------------------
-
-    if not os.path.exists(FINAL_VIDEO):
-        raise RuntimeError(
-            "Final video was not created."
+    video_segments = (
+        create_video_segments(
+            clips,
+            voice_duration
         )
-
-    final_duration = get_duration(
-        FINAL_VIDEO
     )
 
-    print("\n======================================")
-    print("VIDEO COMPLETE")
-    print("======================================")
+    # --------------------------------------------------------
+    # CONCAT
+    # --------------------------------------------------------
 
-    print(f"Final video: {FINAL_VIDEO}")
-    print(
-        f"Final duration: {final_duration:.2f} seconds"
+    visual_video = (
+        concatenate_segments(
+            photo_segment,
+            video_segments
+        )
     )
 
-    print(
-        f"Footage used: {len(clips)}"
-    )
+    # --------------------------------------------------------
+    # FINAL
+    # --------------------------------------------------------
 
-    print("\nSUCCESS")
+    create_final_video(
+        visual_video,
+        subtitle_file,
+        voice_duration,
+        cta_items
+    )
 
 
 if __name__ == "__main__":
