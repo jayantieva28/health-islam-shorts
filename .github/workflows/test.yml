@@ -3,11 +3,15 @@ name: Generate Video
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   video:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -24,11 +28,30 @@ jobs:
         run: |
           python3 scripts/generate_script.py
 
+      - name: Show selected topic
+        run: |
+          echo "======================================"
+          echo "SELECTED TOPIC"
+          echo "======================================"
+          cat output/topic.txt
+          echo ""
+          echo "======================================"
+          echo "SCRIPT"
+          echo "======================================"
+          cat output/script.txt
+
       - name: Fact check
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           python3 scripts/fact_check.py
+
+      - name: Show fact check
+        run: |
+          echo "======================================"
+          echo "FACT CHECK"
+          echo "======================================"
+          cat output/fact_check.txt
 
       - name: Generate voice
         run: |
@@ -71,7 +94,31 @@ jobs:
         with:
           name: shorts-video
           path: |
+            output/topic.txt
             output/script.txt
             output/fact_check.txt
+            output/subtitles.srt
             output/voice.wav
             output/short.mp4
+
+      - name: Mark topic as DONE
+        run: |
+          python3 scripts/mark_topic_done.py
+
+      - name: Show updated topic database
+        run: |
+          echo "======================================"
+          echo "UPDATED TOPIC DATABASE"
+          echo "======================================"
+          cat topics.csv
+
+      - name: Commit topic status
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add topics.csv
+
+          git diff --cached --quiet || git commit -m "Mark completed topic as DONE"
+
+          git push
