@@ -1,4 +1,5 @@
 import os
+import csv
 import requests
 
 os.makedirs("output", exist_ok=True)
@@ -9,30 +10,78 @@ if not API_KEY:
     raise RuntimeError("OPENROUTER_API_KEY belum tersedia.")
 
 MODEL = "openrouter/free"
+TOPICS_FILE = "topics.csv"
 
-topic = "Benefits of eating oats"
+# ============================================================
+# 1. AMBIL TOPIC READY PERTAMA
+# ============================================================
 
-# Simpan topic untuk digunakan oleh video search
+if not os.path.exists(TOPICS_FILE):
+    raise RuntimeError("topics.csv tidak ditemukan.")
+
+selected_topic = None
+selected_category = None
+selected_id = None
+
+with open(TOPICS_FILE, "r", encoding="utf-8") as f:
+    reader = csv.DictReader(f)
+
+    for row in reader:
+        if row["status"].strip().upper() == "READY":
+            selected_id = row["id"]
+            selected_category = row["category"]
+            selected_topic = row["topic"]
+            break
+
+if not selected_topic:
+    raise RuntimeError("Tidak ada topic dengan status READY.")
+
+print("======================================")
+print("TOPIC TERPILIH")
+print("======================================")
+print(f"ID       : {selected_id}")
+print(f"Category : {selected_category}")
+print(f"Topic    : {selected_topic}")
+print("======================================")
+
+
+# ============================================================
+# 2. SIMPAN TOPIC
+# ============================================================
+
 with open("output/topic.txt", "w", encoding="utf-8") as f:
-    f.write(topic)
+    f.write(selected_topic)
+
+
+# ============================================================
+# 3. BUAT SCRIPT
+# ============================================================
 
 prompt = f"""
 Create a 45-60 second YouTube Shorts script in English.
 
+Category:
+{selected_category}
+
 Topic:
-{topic}
+{selected_topic}
 
 Requirements:
-- Strong opening hook.
-- Evidence-based nutrition information.
-- Use cautious and accurate wording.
-- Do not claim that food cures or treats diseases.
+- Start with a strong but accurate hook.
+- Give useful, evidence-based information.
+- Use cautious scientific wording.
+- Do not claim that food cures, treats, or prevents diseases.
 - Do not exaggerate health benefits.
 - Do not invent scientific facts.
+- Do not make unsupported medical claims.
 - Do not give dangerous medical advice.
 - Do not tell viewers to stop prescribed treatment.
+- Distinguish religious information from medical evidence.
+- If mentioning Islamic teachings, present them as religious guidance,
+  not as scientific proof of a medical effect.
 - Give one practical takeaway.
 - End with a simple call to action.
+- Keep the script natural for spoken English.
 - Output ONLY the script.
 """
 
@@ -67,14 +116,18 @@ data = response.json()
 script = data["choices"][0]["message"]["content"].strip()
 
 if not script:
-    raise RuntimeError("AI menghasilkan script kosong.")
+    raise RuntimeError("AI tidak menghasilkan script.")
+
+
+# ============================================================
+# 4. SIMPAN SCRIPT
+# ============================================================
 
 with open("output/script.txt", "w", encoding="utf-8") as f:
     f.write(script)
 
-print("======================================")
+print("")
 print("SCRIPT BERHASIL DIBUAT")
-print(f"Topic: {topic}")
+print(f"Topic: {selected_topic}")
 print("Saved: output/script.txt")
 print("Saved: output/topic.txt")
-print("======================================")
