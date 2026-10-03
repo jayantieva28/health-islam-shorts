@@ -63,9 +63,9 @@ def create_subtitles(script_text, duration):
     for sentence in sentences:
         words = sentence.split()
 
-        # Maksimum sekitar 7 kata per subtitle
-        for i in range(0, len(words), 7):
-            chunk = " ".join(words[i:i + 7]).strip()
+        # Maksimum sekitar 5 kata per subtitle
+        for i in range(0, len(words), 5):
+            chunk = " ".join(words[i:i + 5]).strip()
             if chunk:
                 chunks.append(chunk)
 
@@ -220,7 +220,7 @@ subtitle_filter = (
     "subtitles=output/subtitles.srt:"
     "force_style='"
     "FontName=DejaVu Sans,"
-    "FontSize=30,"
+    "FontSize=20,"
     "Bold=1,"
     "PrimaryColour=&H00FFFFFF,"
     "BackColour=&H80000000,"
@@ -228,9 +228,9 @@ subtitle_filter = (
     "Outline=0,"
     "Shadow=0,"
     "Alignment=2,"
-    "MarginL=60,"
-    "MarginR=60,"
-    "MarginV=180"
+    "MarginL=100,"
+    "MarginR=100,"
+    "MarginV=170"
     "'"
 )
 
