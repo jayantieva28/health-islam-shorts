@@ -230,7 +230,7 @@ subtitle_filter = (
     "Alignment=2,"
     "MarginL=80,"
     "MarginR=80,"
-    "MarginV=150"
+    "MarginV=500"
     "'"
 )
 
