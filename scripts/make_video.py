@@ -228,9 +228,9 @@ subtitle_filter = (
     "Outline=2,"
     "Shadow=1,"
     "Alignment=2,"
-    "MarginL=80,"
-    "MarginR=80,"
-    "MarginV=500"
+    "MarginL=60,"
+    "MarginR=60,"
+    "MarginV=70"
     "'"
 )
 
