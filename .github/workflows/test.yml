@@ -77,37 +77,22 @@ jobs:
           echo "===== DOWNLOADED VIDEO CLIPS ====="
           ls -lh output/clips/
 
-      - name: Upload video clips
-        uses: actions/upload-artifact@v4
-        with:
-          name: video-clips
-          path: output/clips/
-
       - name: Create Shorts video
         run: |
           python3 scripts/make_video.py
 
-      - name: Upload final Shorts
-        uses: actions/upload-artifact@v4
-        with:
-          name: final-short
-          path: output/short.mp4
-
       - name: Show generated files
         run: |
+          echo "======================================"
+          echo "GENERATED FILES"
+          echo "======================================"
           ls -lh output/
 
-      - name: Upload Shorts
-        uses: actions/upload-artifact@v4
-        with:
-          name: shorts-video
-          path: |
-            output/topic.txt
-            output/script.txt
-            output/fact_check.txt
-            output/subtitles.srt
-            output/voice.wav
-            output/short.mp4
+          echo ""
+          echo "======================================"
+          echo "FINAL VIDEO"
+          echo "======================================"
+          ls -lh output/short.mp4
 
       - name: Mark topic as DONE
         run: |
@@ -130,3 +115,26 @@ jobs:
           git diff --cached --quiet || git commit -m "Mark completed topic as DONE"
 
           git push
+
+      - name: Create GitHub Release with MP4
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="short-$(date -u +%Y%m%d-%H%M%S)"
+
+          echo "======================================"
+          echo "CREATING RELEASE"
+          echo "======================================"
+          echo "Release tag: $TAG"
+
+          gh release create "$TAG" \
+            output/short.mp4 \
+            --title "Tayyib Health Notes - $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            --notes "Automatically generated YouTube Short for Tayyib Health Notes."
+
+          echo ""
+          echo "======================================"
+          echo "RELEASE CREATED"
+          echo "======================================"
+
+          gh release view "$TAG" --json url --jq '.url'
