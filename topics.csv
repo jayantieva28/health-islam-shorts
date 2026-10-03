@@ -1,0 +1,31 @@
+id,category,topic,status
+1,Healthy Food,Benefits of eating oats,READY
+2,Healthy Food,Benefits of eating blueberries,READY
+3,Healthy Food,Benefits of eating eggs,READY
+4,Healthy Food,Benefits of eating spinach,READY
+5,Healthy Food,Benefits of eating walnuts,READY
+6,Healthy Food,Benefits of eating bananas,READY
+7,Healthy Food,Benefits of eating carrots,READY
+8,Healthy Food,Benefits of eating tomatoes,READY
+9,Healthy Food,Benefits of eating yogurt,READY
+10,Healthy Food,Benefits of eating lentils,READY
+11,Natural Foods,Benefits of ginger,READY
+12,Natural Foods,Benefits of garlic,READY
+13,Natural Foods,Benefits of turmeric,READY
+14,Natural Foods,Benefits of cinnamon,READY
+15,Natural Foods,Benefits of green tea,READY
+16,Natural Foods,Benefits of honey,READY
+17,Natural Foods,Benefits of dates,READY
+18,Natural Foods,Benefits of black seed,READY
+19,Natural Foods,Benefits of olive oil,READY
+20,Natural Foods,Benefits of pomegranate,READY
+21,Islamic Lifestyle,Moderation in eating in Islam,READY
+22,Islamic Lifestyle,The Islamic principle of avoiding excess in food,READY
+23,Islamic Lifestyle,The importance of cleanliness in Islamic lifestyle,READY
+24,Islamic Lifestyle,Balanced eating and Islamic teachings,READY
+25,Islamic Lifestyle,The role of dates in Islamic tradition,READY
+26,Islamic Lifestyle,Honey in Islamic tradition,READY
+27,Islamic Lifestyle,Olives and Islamic tradition,READY
+28,Islamic Lifestyle,Healthy habits inspired by Islamic teachings,READY
+29,Islamic Lifestyle,The importance of moderation in daily life,READY
+30,Islamic Lifestyle,Simple healthy habits from Islamic teachings,READY
