@@ -14,8 +14,8 @@ if not API_KEY:
 MODEL = "openrouter/free"
 TOPICS_FILE = "topics.csv"
 MAX_ATTEMPTS = 5
-MIN_WORDS = 80
-MAX_WORDS = 150
+MIN_WORDS = 100
+MAX_WORDS = 125
 
 
 # ============================================================
@@ -72,7 +72,7 @@ Category:
 Topic:
 {selected_topic}
 
-Write a complete spoken narration of approximately 90-120 words.
+Write a complete spoken narration of approximately 105-120 words.
 
 The narration must directly explain the topic above.
 
@@ -257,7 +257,7 @@ You MUST produce a complete spoken narration about:
 The previous response failed validation.
 
 This time:
-- Write approximately 90-120 spoken words.
+- Write approximately 100-125 spoken words.
 - Do not answer with a safety classification.
 - Do not say "User Safety".
 - Do not discuss these instructions.
