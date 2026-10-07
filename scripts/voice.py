@@ -345,128 +345,121 @@ for i, part in enumerate(parts):
 # Easier and more reliable approach:
 # use individual inputs + anullsrc between them.
 
-filter_inputs = []
+# ============================================================
+# BUILD FINAL VOICE WITH SENTENCE PAUSES
+# ============================================================
+
+ffmpeg_inputs = []
+filter_parts = []
 concat_labels = []
 
 input_index = 0
 
 for i, part in enumerate(parts):
 
-    filter_inputs.append(
+    # --------------------------------------------------------
+    # Add generated sentence audio
+    # --------------------------------------------------------
+
+    ffmpeg_inputs.extend([
+        "-i",
+        part["path"]
+    ])
+
+    filter_parts.append(
         f"[{input_index}:a]"
         f"asetpts=PTS-STARTPTS"
         f"[s{i}]"
     )
 
-    concat_labels.append(
-        f"[s{i}]"
-    )
+    concat_labels.append(f"[s{i}]")
 
     input_index += 1
+
+    # --------------------------------------------------------
+    # Add silence AFTER each sentence except the last one
+    # --------------------------------------------------------
 
     if i < len(parts) - 1:
 
         silence_index = input_index
 
-        # silence input is added later
+        ffmpeg_inputs.extend([
+            "-f",
+            "lavfi",
+            "-t",
+            str(SENTENCE_SILENCE),
+            "-i",
+            "anullsrc=r=22050:cl=mono"
+        ])
 
-        filter_inputs.append(
+        filter_parts.append(
             f"[{silence_index}:a]"
             f"asetpts=PTS-STARTPTS"
             f"[sil{i}]"
         )
 
-        concat_labels.append(
-            f"[sil{i}]"
-        )
+        concat_labels.append(f"[sil{i}]")
 
         input_index += 1
 
 
-# Rebuild input arguments with silence sources.
-ffmpeg_inputs = []
+# ------------------------------------------------------------
+# Build concat filter
+# ------------------------------------------------------------
 
-for i, part in enumerate(parts):
-
-    ffmpeg_inputs.extend(
-        [
-            "-i",
-            part["path"]
-        ]
-    )
-
-    if i < len(parts) - 1:
-
-        ffmpeg_inputs.extend(
-            [
-                "-f",
-                "lavfi",
-                "-t",
-                str(SENTENCE_SILENCE),
-                "-i",
-                "anullsrc=r=22050:cl=mono"
-            ]
-        )
-
-
-concat_filter = (
-    "".join(filter_inputs)
-    + ""
+filter_complex = (
+    "".join(filter_parts)
     + "".join(concat_labels)
     + f"concat=n={len(concat_labels)}:v=0:a=1"
     + "[outa]"
 )
 
-final_filter = (
-    "".join(filter_inputs)
-    + f"{''.join(concat_labels)}"
-    + f"concat=n={len(concat_labels)}:v=0:a=1"
-    + "[outa]"
-)
-
-
-# Correct the filter because each label needs to be joined.
-filter_complex = "".join(filter_inputs)
-
-# Build final concat input labels explicitly.
-labels = []
-
-for i in range(len(parts)):
-
-    labels.append(f"[s{i}]")
-
-    if i < len(parts) - 1:
-        labels.append(f"[sil{i}]")
-
-
-filter_complex += (
-    "".join(labels)
-    + f"concat=n={len(labels)}:v=0:a=1[outa]"
-)
-
 
 print("")
 print("Rendering final voice with sentence pauses...")
+print("Sentences:", len(parts))
+print("Silence between sentences:", SENTENCE_SILENCE, "seconds")
+
+
+# ------------------------------------------------------------
+# Run FFmpeg
+# ------------------------------------------------------------
+
+final_voice_command = [
+    "ffmpeg",
+    "-y",
+    *ffmpeg_inputs,
+    "-filter_complex",
+    filter_complex,
+    "-map",
+    "[outa]",
+    "-ar",
+    "22050",
+    "-ac",
+    "1",
+    "-c:a",
+    "pcm_s16le",
+    VOICE_PATH
+]
+
+
+print("")
+print("FFmpeg command:")
+print(" ".join(final_voice_command))
+print("")
+
 
 final_voice_process = subprocess.run(
-    [
-        "ffmpeg",
-        "-y",
-        *ffmpeg_inputs,
-        "-filter_complex",
-        filter_complex,
-        "-map",
-        "[outa]",
-        "-c:a",
-        "pcm_s16le",
-        VOICE_PATH
-    ],
+    final_voice_command,
     capture_output=True,
     text=True
 )
 
+
 if final_voice_process.returncode != 0:
 
+    print("===== FFMPEG ERROR =====")
     print(final_voice_process.stderr)
 
     raise RuntimeError(
@@ -474,6 +467,9 @@ if final_voice_process.returncode != 0:
     )
 
 
+print("")
+print("FINAL VOICE GENERATED SUCCESSFULLY")
+print("Output:", VOICE_PATH)
 # ============================================================
 # ACTUAL FINAL DURATION
 # ============================================================
