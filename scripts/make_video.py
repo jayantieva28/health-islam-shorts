@@ -1,17 +1,14 @@
 import os
 import re
+import json
 import subprocess
-import math
 
-
-# ============================================================
-# CONFIG
-# ============================================================
 
 OUTPUT_DIR = "output"
 CLIPS_DIR = "output/clips"
 
 VOICE_FILE = "output/voice.wav"
+VOICE_TIMING_FILE = "output/voice_timing.json"
 THUMBNAIL_FILE = "output/thumbnail.jpg"
 SCRIPT_FILE = "output/script.txt"
 
@@ -21,27 +18,18 @@ WIDTH = 1080
 HEIGHT = 1920
 FPS = 30
 
-# Opening photo duration
 PHOTO_DURATION = 2.0
-
-# Transition duration
 TRANSITION = 0.35
-
-# Minimum number of clips required
 MIN_CLIPS = 7
 
-# Subtitle settings
 SUBTITLE_FONT = "DejaVu Sans"
 SUBTITLE_SIZE = 12
 SUBTITLE_MARGIN_V = 70
 
+MIN_SUBTITLE_DURATION = 0.25
 
-# ============================================================
-# RUN COMMAND
-# ============================================================
 
 def run(cmd):
-
     print("\nRUNNING:")
     print(" ".join(str(x) for x in cmd))
 
@@ -61,12 +49,7 @@ def run(cmd):
         )
 
 
-# ============================================================
-# GET MEDIA DURATION
-# ============================================================
-
 def get_duration(filename):
-
     cmd = [
         "ffprobe",
         "-v",
@@ -92,35 +75,35 @@ def get_duration(filename):
 
     try:
         return float(result.stdout.strip())
-    except:
+    except Exception:
         raise RuntimeError(
             f"Durasi tidak valid: {filename}"
         )
 
 
-# ============================================================
-# GET VOICE DURATION
-# ============================================================
-
 def get_voice_duration():
-
-    duration = get_duration(
-        VOICE_FILE
-    )
+    duration = get_duration(VOICE_FILE)
 
     print(
         f"\nVoice duration: {duration:.2f} seconds"
     )
 
+    if duration < 50:
+        print(
+            "WARNING: voice di bawah 50 detik. "
+            "Pastikan voice.py sudah memakai V7 timing."
+        )
+
+    if duration > 55:
+        raise RuntimeError(
+            f"Voice terlalu panjang: {duration:.2f}s. "
+            "Target V7 adalah 50-55 detik."
+        )
+
     return duration
 
 
-# ============================================================
-# FIND ALL VIDEO CLIPS
-# ============================================================
-
 def get_clips():
-
     if not os.path.isdir(CLIPS_DIR):
         raise RuntimeError(
             f"Folder tidak ditemukan: {CLIPS_DIR}"
@@ -129,9 +112,7 @@ def get_clips():
     clips = []
 
     for filename in os.listdir(CLIPS_DIR):
-
         if filename.lower().endswith(".mp4"):
-
             clips.append(
                 os.path.join(
                     CLIPS_DIR,
@@ -139,37 +120,25 @@ def get_clips():
                 )
             )
 
-    # Natural sorting: clip_01, clip_02, ...
     def sort_key(path):
-
         name = os.path.basename(path)
-
-        numbers = re.findall(
-            r"\d+",
-            name
-        )
+        numbers = re.findall(r"\d+", name)
 
         if numbers:
             return int(numbers[-1])
 
         return 999999
 
-    clips.sort(
-        key=sort_key
-    )
+    clips.sort(key=sort_key)
 
     print(
         f"\nVideo clips found: {len(clips)}"
     )
 
     for clip in clips:
-        print(
-            " -",
-            clip
-        )
+        print(" -", clip)
 
     if len(clips) < MIN_CLIPS:
-
         raise RuntimeError(
             f"Minimal {MIN_CLIPS} video diperlukan. "
             f"Hanya ditemukan {len(clips)}."
@@ -178,26 +147,21 @@ def get_clips():
     return clips
 
 
-# ============================================================
-# CREATE SUBTITLE FILE
-# ============================================================
-
 def format_srt_time(seconds):
-
     milliseconds = int(
         round(
             (seconds - int(seconds)) * 1000
         )
     )
 
+    if milliseconds >= 1000:
+        seconds = float(int(seconds) + 1)
+        milliseconds = 0
+
     total_seconds = int(seconds)
 
     hours = total_seconds // 3600
-
-    minutes = (
-        total_seconds % 3600
-    ) // 60
-
+    minutes = (total_seconds % 3600) // 60
     secs = total_seconds % 60
 
     return (
@@ -208,13 +172,122 @@ def format_srt_time(seconds):
     )
 
 
-def create_subtitles(
-    voice_duration
-):
+def load_voice_timing():
 
-    if not os.path.exists(
-        SCRIPT_FILE
-    ):
+    if not os.path.exists(VOICE_TIMING_FILE):
+        print(
+            "\nvoice_timing.json not found."
+        )
+        print(
+            "Using fallback proportional subtitle timing."
+        )
+        return None
+
+    try:
+        with open(
+            VOICE_TIMING_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+            data = json.load(f)
+
+    except Exception as e:
+        print(
+            f"\nWARNING: gagal membaca "
+            f"{VOICE_TIMING_FILE}: {e}"
+        )
+        return None
+
+    if isinstance(data, list):
+        entries = data
+
+    elif isinstance(data, dict):
+        entries = (
+            data.get("sentences")
+            or data.get("timings")
+            or data.get("segments")
+        )
+
+    else:
+        entries = None
+
+    if not isinstance(entries, list):
+        print(
+            "\nWARNING: format voice_timing.json "
+            "tidak dikenali."
+        )
+        return None
+
+    clean = []
+
+    for item in entries:
+
+        if not isinstance(item, dict):
+            continue
+
+        text = (
+            item.get("text")
+            or item.get("sentence")
+            or item.get("content")
+            or ""
+        )
+
+        start = item.get(
+            "start",
+            item.get("start_time")
+        )
+
+        end = item.get(
+            "end",
+            item.get("end_time")
+        )
+
+        duration = item.get("duration")
+
+        try:
+            start = float(start)
+        except Exception:
+            continue
+
+        if end is None and duration is not None:
+            try:
+                end = start + float(duration)
+            except Exception:
+                continue
+
+        try:
+            end = float(end)
+        except Exception:
+            continue
+
+        text = str(text).strip()
+
+        if not text or end <= start:
+            continue
+
+        clean.append({
+            "text": text,
+            "start": start,
+            "end": end
+        })
+
+    if not clean:
+        print(
+            "\nWARNING: tidak ada timing valid."
+        )
+        return None
+
+    print(
+        f"\nVoice timing loaded: "
+        f"{len(clean)} sentence segments"
+    )
+
+    return clean
+
+
+def create_subtitles(voice_duration):
+
+    if not os.path.exists(SCRIPT_FILE):
         raise RuntimeError(
             "script.txt tidak ditemukan."
         )
@@ -224,10 +297,8 @@ def create_subtitles(
         "r",
         encoding="utf-8"
     ) as f:
-
         script = f.read().strip()
 
-    # Remove accidental production notes
     script = re.sub(
         r"\[[^\]]*\]",
         "",
@@ -246,38 +317,222 @@ def create_subtitles(
         script
     ).strip()
 
-    words = script.split()
-
-    # EXACTLY 5 WORDS PER SUBTITLE CHUNK
-    chunks = []
-
-    for i in range(
-        0,
-        len(words),
-        5
-    ):
-
-        chunk = " ".join(
-            words[i:i + 5]
-        ).strip()
-
-        if chunk:
-            chunks.append(chunk)
-
-    if not chunks:
+    if not script:
         raise RuntimeError(
-            "Tidak ada teks untuk subtitle."
+            "Script kosong."
         )
 
-    subtitle_file = (
-        "output/subtitles.srt"
-    )
+    timing = load_voice_timing()
 
-    # Divide subtitle timing across voice.
-    chunk_duration = (
-        voice_duration /
-        len(chunks)
-    )
+    subtitle_file = "output/subtitles.srt"
+
+    if timing:
+
+        entries = []
+
+        for segment in timing:
+
+            sentence = segment["text"].strip()
+
+            sentence = re.sub(
+                r"\*\*",
+                "",
+                sentence
+            )
+
+            words = sentence.split()
+
+            if not words:
+                continue
+
+            sentence_start = max(
+                0.0,
+                segment["start"]
+            )
+
+            sentence_end = min(
+                voice_duration,
+                segment["end"]
+            )
+
+            if sentence_end <= sentence_start:
+                continue
+
+            sentence_duration = (
+                sentence_end -
+                sentence_start
+            )
+
+            chunks = []
+
+            for i in range(
+                0,
+                len(words),
+                5
+            ):
+
+                chunk = " ".join(
+                    words[i:i + 5]
+                ).strip()
+
+                if chunk:
+                    chunks.append(chunk)
+
+            total_words = len(words)
+            word_cursor = 0
+
+            for chunk in chunks:
+
+                chunk_words = len(
+                    chunk.split()
+                )
+
+                start_ratio = (
+                    word_cursor /
+                    total_words
+                )
+
+                end_ratio = (
+                    (word_cursor + chunk_words) /
+                    total_words
+                )
+
+                start = (
+                    sentence_start +
+                    sentence_duration *
+                    start_ratio
+                )
+
+                end = (
+                    sentence_start +
+                    sentence_duration *
+                    end_ratio
+                )
+
+                if (
+                    end - start
+                    < MIN_SUBTITLE_DURATION
+                ):
+                    end = min(
+                        sentence_end,
+                        start +
+                        MIN_SUBTITLE_DURATION
+                    )
+
+                entries.append({
+                    "text": chunk,
+                    "start": start,
+                    "end": end
+                })
+
+                word_cursor += chunk_words
+
+        if not entries:
+            raise RuntimeError(
+                "Voice timing tersedia tetapi "
+                "subtitle tidak dapat dibuat."
+            )
+
+        print(
+            "\nSubtitle mode: VOICE TIMING"
+        )
+
+    else:
+
+        words = script.split()
+
+        chunks = []
+
+        for i in range(
+            0,
+            len(words),
+            5
+        ):
+
+            chunk = " ".join(
+                words[i:i + 5]
+            ).strip()
+
+            if chunk:
+                chunks.append(chunk)
+
+        if not chunks:
+            raise RuntimeError(
+                "Tidak ada teks untuk subtitle."
+            )
+
+        total_words = len(words)
+
+        entries = []
+
+        word_cursor = 0
+
+        for chunk in chunks:
+
+            chunk_words = len(
+                chunk.split()
+            )
+
+            start = (
+                voice_duration *
+                word_cursor /
+                total_words
+            )
+
+            end = (
+                voice_duration *
+                (word_cursor + chunk_words) /
+                total_words
+            )
+
+            entries.append({
+                "text": chunk,
+                "start": start,
+                "end": end
+            })
+
+            word_cursor += chunk_words
+
+        print(
+            "\nSubtitle mode: FALLBACK"
+        )
+
+    cleaned_entries = []
+
+    previous_end = 0.0
+
+    for entry in entries:
+
+        start = max(
+            previous_end,
+            min(
+                voice_duration,
+                entry["start"]
+            )
+        )
+
+        end = max(
+            start,
+            min(
+                voice_duration,
+                entry["end"]
+            )
+        )
+
+        if end > start:
+
+            cleaned_entries.append({
+                "text": entry["text"],
+                "start": start,
+                "end": end
+            })
+
+            previous_end = end
+
+    if not cleaned_entries:
+        raise RuntimeError(
+            "Tidak ada subtitle timing yang valid."
+        )
 
     with open(
         subtitle_file,
@@ -285,39 +540,22 @@ def create_subtitles(
         encoding="utf-8"
     ) as f:
 
-        for index, chunk in enumerate(
-            chunks,
+        for index, entry in enumerate(
+            cleaned_entries,
             start=1
         ):
-
-            start = (
-                (index - 1)
-                * chunk_duration
-            )
-
-            end = (
-                index
-                * chunk_duration
-            )
-
-            # Prevent final subtitle
-            # from exceeding voice duration.
-            end = min(
-                end,
-                voice_duration
-            )
 
             f.write(
                 f"{index}\n"
             )
 
             f.write(
-                f"{format_srt_time(start)} --> "
-                f"{format_srt_time(end)}\n"
+                f"{format_srt_time(entry['start'])} --> "
+                f"{format_srt_time(entry['end'])}\n"
             )
 
             f.write(
-                f"{chunk}\n\n"
+                f"{entry['text']}\n\n"
             )
 
     print(
@@ -326,21 +564,16 @@ def create_subtitles(
     )
 
     print(
-        f"Subtitle chunks: {len(chunks)}"
+        f"Subtitle chunks: "
+        f"{len(cleaned_entries)}"
     )
 
     return subtitle_file
 
 
-# ============================================================
-# DETECT FINAL CTA
-# ============================================================
-
 def detect_cta():
 
-    if not os.path.exists(
-        SCRIPT_FILE
-    ):
+    if not os.path.exists(SCRIPT_FILE):
         return []
 
     with open(
@@ -348,10 +581,8 @@ def detect_cta():
         "r",
         encoding="utf-8"
     ) as f:
-
         script = f.read().lower()
 
-    # Focus on the ending of the script.
     words = script[-500:]
 
     cta_items = []
@@ -376,7 +607,6 @@ def detect_cta():
             "FOLLOW"
         )
 
-    # Avoid showing unrelated CTA.
     if not cta_items:
         cta_items = [
             "SUBSCRIBE"
@@ -390,10 +620,6 @@ def detect_cta():
     return cta_items
 
 
-# ============================================================
-# PREPARE WORKING DIRECTORIES
-# ============================================================
-
 def prepare_directories():
 
     os.makedirs(
@@ -401,7 +627,6 @@ def prepare_directories():
         exist_ok=True
     )
 
-    # Remove old generated segments.
     for filename in os.listdir(
         "output/segments"
     ):
@@ -415,10 +640,6 @@ def prepare_directories():
             os.remove(path)
 
 
-# ============================================================
-# CREATE OPENING PHOTO
-# ============================================================
-
 def create_photo_segment():
 
     output = (
@@ -429,9 +650,9 @@ def create_photo_segment():
         "\nCreating opening photo..."
     )
 
-    # Slight zoom effect.
     vf = (
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "scale=1080:1920:"
+        "force_original_aspect_ratio=increase,"
         "crop=1080:1920,"
         "zoompan="
         "z='min(zoom+0.0008,1.08)':"
@@ -469,16 +690,11 @@ def create_photo_segment():
     return output
 
 
-# ============================================================
-# CREATE VIDEO SEGMENTS
-# ============================================================
-
 def create_video_segments(
     clips,
     voice_duration
 ):
 
-    # Time available after opening photo.
     available_duration = (
         voice_duration -
         PHOTO_DURATION
@@ -489,7 +705,6 @@ def create_video_segments(
             "Voice terlalu pendek."
         )
 
-    # Get original durations.
     durations = []
 
     for clip in clips:
@@ -497,6 +712,12 @@ def create_video_segments(
         duration = get_duration(
             clip
         )
+
+        if duration <= 0.05:
+            raise RuntimeError(
+                f"Clip tidak valid atau "
+                f"terlalu pendek: {clip}"
+            )
 
         durations.append(
             duration
@@ -521,25 +742,40 @@ def create_video_segments(
         f"{available_duration:.2f}s"
     )
 
-    # --------------------------------------------------------
-    # Allocate duration proportionally.
-    #
-    # This ensures ALL downloaded videos are used.
-    # --------------------------------------------------------
+    if total_source_duration < available_duration:
+
+        raise RuntimeError(
+            "\nFOOTAGE TIDAK CUKUP.\n"
+            f"Original footage: "
+            f"{total_source_duration:.2f}s\n"
+            f"Required: "
+            f"{available_duration:.2f}s\n\n"
+            "V7 tidak akan mempercepat, "
+            "memperlambat, atau mengulang video.\n"
+            "Download additional clips "
+            "and run again."
+        )
 
     target_durations = []
 
     for duration in durations:
 
         target = (
-            available_duration
-            * duration
-            / total_source_duration
+            available_duration *
+            duration /
+            total_source_duration
         )
 
         target_durations.append(
             target
         )
+
+    difference = (
+        available_duration -
+        sum(target_durations)
+    )
+
+    target_durations[-1] += difference
 
     segment_files = []
 
@@ -561,49 +797,38 @@ def create_video_segments(
             f"segment_{index:02d}.mp4"
         )
 
-        print("\n--------------------------------")
+        print(
+            "\n--------------------------------"
+        )
+
         print(
             f"Preparing clip {index}"
         )
 
         print(
-            f"Source: {source_duration:.2f}s"
+            f"Source: "
+            f"{source_duration:.2f}s"
         )
 
         print(
-            f"Target: {target_duration:.2f}s"
-        )
-
-        # Speed factor:
-        #
-        # If target is longer:
-        # video is slowed down.
-        #
-        # If target is shorter:
-        # video is trimmed.
-        speed_factor = (
-            target_duration /
-            source_duration
+            f"Target: "
+            f"{target_duration:.2f}s"
         )
 
         print(
-            f"Speed factor: "
-            f"{speed_factor:.3f}"
+            "Playback speed: 1.000x"
         )
 
-        # Slight slowdown / speed adjustment.
-        setpts = (
-            f"setpts={speed_factor:.8f}*PTS"
+        print(
+            "Action: TRIM ONLY"
         )
 
-        # Crop/fill vertical 1080x1920.
         scale_crop = (
             "scale=1080:1920:"
             "force_original_aspect_ratio=increase,"
             "crop=1080:1920"
         )
 
-        # Fade first video in.
         if index == 1:
 
             fade = (
@@ -617,7 +842,6 @@ def create_video_segments(
             fade = "null"
 
         vf = (
-            f"{setpts},"
             f"{scale_crop},"
             f"{fade},"
             "fps=30,"
@@ -651,10 +875,6 @@ def create_video_segments(
 
     return segment_files
 
-
-# ============================================================
-# CONCATENATE VISUAL SEGMENTS
-# ============================================================
 
 def concatenate_segments(
     photo_segment,
@@ -707,12 +927,17 @@ def concatenate_segments(
         visual_video
     ])
 
+    visual_duration = get_duration(
+        visual_video
+    )
+
+    print(
+        f"\nVisual duration: "
+        f"{visual_duration:.3f}s"
+    )
+
     return visual_video
 
-
-# ============================================================
-# FINAL VIDEO
-# ============================================================
 
 def create_final_video(
     visual_video,
@@ -725,15 +950,10 @@ def create_final_video(
         "\nCreating final Shorts video..."
     )
 
-    # --------------------------------------------------------
-    # CTA TEXT
-    # --------------------------------------------------------
-
     cta_text = " • ".join(
         cta_items
     )
 
-    # Escape characters for drawtext.
     cta_text = (
         cta_text
         .replace("\\", "\\\\")
@@ -741,13 +961,11 @@ def create_final_video(
         .replace("'", "\\'")
     )
 
-    # CTA appears during final 2.8 seconds.
     cta_start = max(
         0,
         voice_duration - 2.8
     )
 
-    # Fade in/out.
     cta_duration = 2.8
 
     cta_filter = (
@@ -761,17 +979,18 @@ def create_final_video(
         "bordercolor=black:"
         "x=(w-text_w)/2:"
         "y=h*0.82:"
-        f"enable='between(t\\,{cta_start:.3f}\\,{voice_duration:.3f})':"
-        f"alpha='if(lt(t\\,{cta_start:.3f})\\,0\\,"
-        f"if(lt(t\\,{cta_start + 0.5:.3f})\\,"
+        f"enable='between(t\\,"
+        f"{cta_start:.3f}\\,"
+        f"{voice_duration:.3f})':"
+        f"alpha='if(lt(t\\,"
+        f"{cta_start:.3f})\\,0\\,"
+        f"if(lt(t\\,"
+        f"{cta_start + 0.5:.3f})\\,"
         f"(t-{cta_start:.3f})/0.5\\,"
-        f"if(gt(t\\,{voice_duration - 0.5:.3f})\\,"
+        f"if(gt(t\\,"
+        f"{voice_duration - 0.5:.3f})\\,"
         f"({voice_duration:.3f}-t)/0.5\\,1)))'"
     )
-
-    # --------------------------------------------------------
-    # WATERMARK
-    # --------------------------------------------------------
 
     watermark_filter = (
         "drawtext="
@@ -785,15 +1004,6 @@ def create_final_video(
         "x=45:"
         "y=55"
     )
-
-    # --------------------------------------------------------
-    # SUBTITLE
-    #
-    # DO NOT CHANGE:
-    # FontSize 12
-    # MarginV 70
-    # 5 words per chunk
-    # --------------------------------------------------------
 
     subtitle_filter = (
         "subtitles=output/subtitles.srt:"
@@ -866,17 +1076,14 @@ def create_final_video(
     )
 
     print(
-        f"Duration: {voice_duration:.2f}s"
+        f"Duration: "
+        f"{voice_duration:.2f}s"
     )
 
     print(
         "======================================"
     )
 
-
-# ============================================================
-# MAIN
-# ============================================================
 
 def main():
 
@@ -889,16 +1096,12 @@ def main():
     )
 
     print(
-        "V6-B VIDEO ASSEMBLER"
+        "V7 VIDEO ASSEMBLER"
     )
 
     print(
         "======================================"
     )
-
-    # --------------------------------------------------------
-    # CHECK FILES
-    # --------------------------------------------------------
 
     required_files = [
         VOICE_FILE,
@@ -911,54 +1114,27 @@ def main():
         if not os.path.exists(filename):
 
             raise RuntimeError(
-                f"File tidak ditemukan: {filename}"
+                f"File tidak ditemukan: "
+                f"{filename}"
             )
 
-    # --------------------------------------------------------
-    # PREPARE
-    # --------------------------------------------------------
-
     prepare_directories()
-
-    # --------------------------------------------------------
-    # VOICE
-    # --------------------------------------------------------
 
     voice_duration = (
         get_voice_duration()
     )
 
-    # --------------------------------------------------------
-    # CLIPS
-    # --------------------------------------------------------
-
     clips = get_clips()
-
-    # --------------------------------------------------------
-    # SUBTITLES
-    # --------------------------------------------------------
 
     subtitle_file = create_subtitles(
         voice_duration
     )
 
-    # --------------------------------------------------------
-    # CTA
-    # --------------------------------------------------------
-
     cta_items = detect_cta()
-
-    # --------------------------------------------------------
-    # PHOTO
-    # --------------------------------------------------------
 
     photo_segment = (
         create_photo_segment()
     )
-
-    # --------------------------------------------------------
-    # VIDEOS
-    # --------------------------------------------------------
 
     video_segments = (
         create_video_segments(
@@ -967,20 +1143,12 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
-    # CONCAT
-    # --------------------------------------------------------
-
     visual_video = (
         concatenate_segments(
             photo_segment,
             video_segments
         )
     )
-
-    # --------------------------------------------------------
-    # FINAL
-    # --------------------------------------------------------
 
     create_final_video(
         visual_video,
