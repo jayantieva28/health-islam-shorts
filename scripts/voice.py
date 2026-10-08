@@ -409,7 +409,8 @@ for i, part in enumerate(parts):
 # ------------------------------------------------------------
 
 filter_complex = (
-    "".join(filter_parts)
+    ";".join(filter_parts)
+    + ";"
     + "".join(concat_labels)
     + f"concat=n={len(concat_labels)}:v=0:a=1"
     + "[outa]"
