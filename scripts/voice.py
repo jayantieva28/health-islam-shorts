@@ -562,22 +562,54 @@ print(
 
 
 # ============================================================
-# DURATION SAFETY CHECK
+# PAD SILENCE AT END IF VOICE IS TOO SHORT
 # ============================================================
 
-if final_duration < MIN_DURATION:
+if duration < MIN_DURATION:
+    silence_needed = MIN_DURATION - duration
 
-    raise RuntimeError(
-        f"Voice terlalu pendek: "
-        f"{final_duration:.2f}s. "
-        f"Target minimal {MIN_DURATION}s."
+    print(
+        f"Voice is short by {silence_needed:.2f} seconds."
+    )
+    print("Adding silence at the end of the voice...")
+
+    padded_voice = VOICE_PATH + ".padded.wav"
+
+    pad_process = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i", VOICE_PATH,
+            "-af",
+            f"apad=pad_dur={silence_needed:.3f}",
+            "-t",
+            f"{MIN_DURATION:.3f}",
+            "-ar", "22050",
+            "-ac", "1",
+            "-c:a", "pcm_s16le",
+            padded_voice
+        ],
+        capture_output=True,
+        text=True
     )
 
-if final_duration > MAX_DURATION:
+    if pad_process.returncode != 0:
+        print(pad_process.stderr)
+        raise RuntimeError("Gagal menambahkan silence di akhir voice.")
 
+    import os
+    os.replace(padded_voice, VOICE_PATH)
+
+    duration = MIN_DURATION
+
+    print(
+        f"Silence added successfully. Final duration: {duration:.2f}s"
+    )
+
+
+if duration > MAX_DURATION:
     raise RuntimeError(
-        f"Voice terlalu panjang: "
-        f"{final_duration:.2f}s. "
+        f"Voice terlalu panjang: {duration:.2f}s. "
         f"Target maksimal {MAX_DURATION}s."
     )
 
