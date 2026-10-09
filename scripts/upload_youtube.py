@@ -223,8 +223,9 @@ def main():
             },
             "status": {
                 "privacyStatus": "private",
+                "selfDeclaredMadeForKids": False,
             },
-        },
+            
         media_body=MediaFileUpload(
             str(VIDEO_PATH),
             mimetype="video/mp4",
