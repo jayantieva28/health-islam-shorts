@@ -2,8 +2,8 @@
 import os
 import json
 import re
+import subprocess
 import urllib.request
-import urllib.error
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -11,14 +11,18 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+
 VIDEO_PATH = Path("output/short.mp4")
 TOPIC_PATH = Path("output/topic.txt")
 SCRIPT_PATH = Path("output/script.txt")
+THUMBNAIL_PATH = Path("output/youtube_thumbnail.jpg")
+
 
 def read_text(path):
     if path.is_file():
         return path.read_text(encoding="utf-8").strip()
     return ""
+
 
 def get_topic(topic_text):
     for line in topic_text.splitlines():
@@ -26,37 +30,31 @@ def get_topic(topic_text):
             return line.split(":", 1)[1].strip()
     return topic_text.strip() or "Healthy Living"
 
+
 def fallback_metadata(topic):
     clean_topic = topic.strip().rstrip(".")
-    title = f"{clean_topic}: What You Should Know"
-    title = title[:100]
-
-    description = (
-        f"Discover what you should know about {clean_topic} "
-        "in this short educational video.\n\n"
-        "This video shares general health information, not a "
-        "personal diagnosis or a substitute for professional "
-        "medical advice. Evidence and individual needs can vary.\n\n"
-        "#Shorts #Health #HealthyLiving"
-    )
-
-    words = re.findall(r"[a-zA-Z0-9]+", clean_topic.lower())
-    tags = list(dict.fromkeys([
-        clean_topic.lower(),
-        *words,
-        "health education",
-        "healthy living",
-        "nutrition",
-        "wellness",
-        "health tips",
-        "YouTube Shorts",
-    ]))
-
     return {
-        "title": title,
-        "description": description,
-        "tags": tags[:15],
+        "title": f"{clean_topic}: What You Should Know"[:100],
+        "description": (
+            f"Discover what you should know about {clean_topic} "
+            "in this short educational video.\n\n"
+            "This video shares general health information, not a "
+            "personal diagnosis or a substitute for professional "
+            "medical advice. Evidence and individual needs can vary.\n\n"
+            "#Shorts #Health #HealthyLiving"
+        ),
+        "tags": list(dict.fromkeys([
+            clean_topic.lower(),
+            *re.findall(r"[a-zA-Z0-9]+", clean_topic.lower()),
+            "health education",
+            "healthy living",
+            "nutrition",
+            "wellness",
+            "health tips",
+            "YouTube Shorts",
+        ]))[:15],
     }
+
 
 def generate_metadata(topic, script):
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -83,8 +81,7 @@ Requirements:
 - Do not invent scientific facts, sources, or medical benefits.
 - Include a concise educational disclaimer in the description.
 - Include 2 or 3 relevant hashtags at the end of the description.
-- Return 5 to 15 relevant YouTube tags, including specific topic
-  terms and a few relevant health/nutrition terms.
+- Return 5 to 15 relevant YouTube tags.
 - Avoid unrelated tags and keyword stuffing.
 - Return ONLY valid JSON in this exact shape:
 {{
@@ -137,32 +134,28 @@ Requirements:
         if not title or not description or not isinstance(tags, list):
             raise ValueError("Metadata fields are incomplete.")
 
-        clean_tags = []
-        for tag in tags:
-            if isinstance(tag, str) and tag.strip():
-                clean_tags.append(tag.strip()[:100])
+        clean_tags = [
+            tag.strip()[:100]
+            for tag in tags
+            if isinstance(tag, str) and tag.strip()
+        ]
 
         if not clean_tags:
             clean_tags = fallback_metadata(topic)["tags"]
 
-        metadata = {
+        total_chars = 0
+        final_tags = []
+        for tag in clean_tags:
+            cost = len(tag) + (1 if final_tags else 0)
+            if total_chars + cost <= 480:
+                final_tags.append(tag)
+                total_chars += cost
+
+        return {
             "title": title[:100],
             "description": description[:5000],
-            "tags": clean_tags,
+            "tags": final_tags or fallback_metadata(topic)["tags"],
         }
-
-        # YouTube limits the combined tag text to about 500 characters.
-        final_tags = []
-        total_chars = 0
-        for tag in metadata["tags"]:
-            cost = len(tag) + (1 if final_tags else 0)
-            if total_chars + cost > 480:
-                continue
-            final_tags.append(tag)
-            total_chars += cost
-
-        metadata["tags"] = final_tags
-        return metadata
 
     except Exception as exc:
         print(
@@ -170,6 +163,31 @@ Requirements:
             f"Reason: {type(exc).__name__}"
         )
         return fallback_metadata(topic)
+
+
+def create_thumbnail():
+    THUMBNAIL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i", str(VIDEO_PATH),
+            "-frames:v", "1",
+            "-q:v", "2",
+            str(THUMBNAIL_PATH),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0 or not THUMBNAIL_PATH.is_file():
+        raise RuntimeError(
+            "Failed to create thumbnail: " + result.stderr[-1000:]
+        )
+
+    print("Thumbnail image created:", THUMBNAIL_PATH)
+
 
 def main():
     required = [
@@ -188,7 +206,6 @@ def main():
 
     topic = get_topic(read_text(TOPIC_PATH))
     script = read_text(SCRIPT_PATH)
-
     metadata = generate_metadata(topic, script)
 
     print("Prepared English metadata.")
@@ -211,7 +228,7 @@ def main():
         cache_discovery=False,
     )
 
-    request = youtube.videos().insert(
+    upload_request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
@@ -225,7 +242,7 @@ def main():
                 "privacyStatus": "private",
                 "selfDeclaredMadeForKids": False,
             },
-            
+        },
         media_body=MediaFileUpload(
             str(VIDEO_PATH),
             mimetype="video/mp4",
@@ -234,11 +251,34 @@ def main():
         ),
     )
 
-    response = request.execute()
+    response = upload_request.execute()
+    video_id = response["id"]
+
     print("YouTube upload succeeded.")
-    print("Video ID:", response["id"])
+    print("Video ID:", video_id)
     print("Privacy status: private")
+    print("Audience: Not Made for Kids")
     print("Uploaded at:", datetime.now(timezone.utc).isoformat())
+
+    try:
+        create_thumbnail()
+
+        youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=MediaFileUpload(
+                str(THUMBNAIL_PATH),
+                mimetype="image/jpeg",
+            ),
+        ).execute()
+
+        print("Custom thumbnail uploaded successfully.")
+
+    except Exception as exc:
+        print(
+            "WARNING: Video uploaded, but custom thumbnail could not "
+            f"be set: {type(exc).__name__}: {exc}"
+        )
+
 
 if __name__ == "__main__":
     main()
