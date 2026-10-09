@@ -51,10 +51,10 @@ MAX_DURATION = 55.0
 # < 1.0 = faster
 #
 # 1.08 gives a slightly more relaxed delivery.
-LENGTH_SCALE = 1.15
+LENGTH_SCALE = 1.20
 
 # Natural pause after each sentence.
-SENTENCE_SILENCE = 0.8
+SENTENCE_SILENCE = 1.0
 
 
 # ============================================================
