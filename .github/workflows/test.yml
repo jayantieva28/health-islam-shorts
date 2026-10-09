@@ -94,6 +94,15 @@ jobs:
           echo "======================================"
           ls -lh output/short.mp4
 
+      - name: Upload YouTube Short (Private)
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+          python3 scripts/upload_youtube.py
+
       - name: Mark topic as DONE
         run: |
           python3 scripts/mark_topic_done.py
