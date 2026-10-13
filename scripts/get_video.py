@@ -1,522 +1,264 @@
+
 import os
 import re
+import json
 import requests
-from urllib.parse import quote
-
-
-# ============================================================
-# CONFIG
-# ============================================================
 
 API_KEY = os.environ.get("PIXABAY_API_KEY")
-
 if not API_KEY:
     raise RuntimeError("PIXABAY_API_KEY belum tersedia.")
 
 TOPIC_FILE = "output/topic.txt"
 SCRIPT_FILE = "output/script.txt"
-
 OUTPUT_DIR = "output"
 CLIPS_DIR = "output/clips"
-
 THUMBNAIL_FILE = "output/thumbnail.jpg"
 
-MIN_VIDEOS = 7
+# Riwayat permanen di root repository.
+HISTORY_FILE = "used_footage.json"
+CURRENT_FILE = "output/current_footage.json"
 
+MIN_VIDEOS = 7
 VIDEO_API = "https://pixabay.com/api/videos/"
 IMAGE_API = "https://pixabay.com/api/"
 
 
-# ============================================================
-# HELPERS
-# ============================================================
-
 def clean_text(text):
     text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def get_topic():
-    if not os.path.exists(TOPIC_FILE):
-        raise RuntimeError(
-            f"Topic file tidak ditemukan: {TOPIC_FILE}"
-        )
-
-    with open(
-        TOPIC_FILE,
-        "r",
-        encoding="utf-8"
-    ) as f:
-        topic = f.read().strip()
-
-    if not topic:
-        raise RuntimeError("Topic kosong.")
-
-    return topic
+def read_text(path):
+    if not os.path.exists(path):
+        raise RuntimeError(f"File tidak ditemukan: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if not text:
+        raise RuntimeError(f"File kosong: {path}")
+    return text
 
 
-def get_script():
-    if not os.path.exists(SCRIPT_FILE):
-        raise RuntimeError(
-            f"Script file tidak ditemukan: {SCRIPT_FILE}"
-        )
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return set()
 
-    with open(
-        SCRIPT_FILE,
-        "r",
-        encoding="utf-8"
-    ) as f:
-        script = f.read().strip()
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-    if not script:
-        raise RuntimeError("Script kosong.")
-
-    return script
+    ids = data.get("used_ids", [])
+    return {str(value) for value in ids}
 
 
-def get_keywords(topic, script):
-    """
-    Membuat kata kunci sederhana dari topic + script.
-    Kata umum dibuang agar pencarian Pixabay lebih spesifik.
-    """
-
-    stopwords = {
-        "the", "and", "are", "can", "for", "with",
-        "this", "that", "your", "from", "into",
-        "about", "have", "has", "their", "they",
-        "you", "when", "what", "how", "why",
-        "its", "it's", "also", "more", "than",
-        "with", "some", "very", "just", "like",
-        "healthy", "health", "benefits", "benefit",
-        "food", "eating", "eat", "helps", "help",
-        "may", "could", "should", "people"
+def save_history(used_ids):
+    data = {
+        "used_ids": sorted(used_ids),
     }
-
-    text = clean_text(
-        f"{topic} {script}"
-    ).lower()
-
-    words = text.split()
-
-    keywords = []
-
-    for word in words:
-
-        if len(word) < 4:
-            continue
-
-        if word in stopwords:
-            continue
-
-        if word not in keywords:
-            keywords.append(word)
-
-    return keywords[:12]
+    temp = HISTORY_FILE + ".tmp"
+    with open(temp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(temp, HISTORY_FILE)
 
 
 def download_file(url, filename):
     print(f"Downloading: {url}")
-
-    response = requests.get(
-        url,
-        timeout=120
-    )
-
+    response = requests.get(url, timeout=120)
     response.raise_for_status()
 
     with open(filename, "wb") as f:
         f.write(response.content)
 
-    size = os.path.getsize(filename)
+    if os.path.getsize(filename) < 1000:
+        os.remove(filename)
+        raise RuntimeError(f"File unduhan terlalu kecil: {filename}")
 
-    if size < 1000:
-        raise RuntimeError(
-            f"Downloaded file terlalu kecil: {filename}"
-        )
+    print(f"Saved: {filename}")
 
-    print(
-        f"Saved: {filename} "
-        f"({size / 1024:.1f} KB)"
-    )
-
-
-# ============================================================
-# SEARCH PHOTO
-# ============================================================
 
 def search_thumbnail(topic):
-
-    print("\n======================================")
-    print("SEARCHING THUMBNAIL PHOTO")
-    print("======================================")
-
-    queries = [
-        topic,
-        clean_text(topic).replace(
-            "benefits of ",
-            ""
-        ),
-    ]
+    queries = [topic, clean_text(topic).replace("benefits of ", "")]
 
     for query in queries:
-
-        print(f"Photo query: {query}")
-
         params = {
             "key": API_KEY,
             "q": query,
             "image_type": "photo",
             "orientation": "vertical",
             "safesearch": "true",
-            "per_page": 10
+            "per_page": 10,
         }
 
-        response = requests.get(
-            IMAGE_API,
-            params=params,
-            timeout=120
-        )
-
+        response = requests.get(IMAGE_API, params=params, timeout=120)
         response.raise_for_status()
+        hits = response.json().get("hits", [])
 
-        data = response.json()
-
-        hits = data.get("hits", [])
-
-        if not hits:
-            continue
-
-        # Prefer a high-resolution image.
-        hits = sorted(
-            hits,
-            key=lambda x: (
-                x.get("imageWidth", 0)
-                * x.get("imageHeight", 0)
+        hits.sort(
+            key=lambda item: (
+                item.get("imageWidth", 0) * item.get("imageHeight", 0)
             ),
-            reverse=True
+            reverse=True,
         )
 
-        selected = hits[0]
-
-        image_url = selected.get(
-            "largeImageURL"
-        )
-
-        if not image_url:
-            continue
-
-        download_file(
-            image_url,
-            THUMBNAIL_FILE
-        )
-
-        print(
-            f"Thumbnail selected: "
-            f"{selected.get('id')}"
-        )
-
-        print(
-            f"Thumbnail query: {query}"
-        )
-
-        return True
+        for hit in hits:
+            url = hit.get("largeImageURL")
+            if not url:
+                continue
+            try:
+                download_file(url, THUMBNAIL_FILE)
+                print("Thumbnail ID:", hit.get("id"))
+                return True
+            except Exception as exc:
+                print("Thumbnail dilewati:", exc)
 
     return False
 
 
-# ============================================================
-# SEARCH VIDEOS
-# ============================================================
+def get_keywords(topic, script):
+    stopwords = {
+        "the", "and", "are", "can", "for", "with", "this", "that",
+        "your", "from", "into", "about", "have", "their", "they",
+        "you", "when", "what", "how", "why", "also", "more", "than",
+        "some", "very", "just", "like", "healthy", "health",
+        "benefits", "benefit", "food", "eating", "eat", "helps",
+        "help", "may", "could", "should", "people",
+    }
 
-def search_videos(topic, script):
+    words = clean_text(f"{topic} {script}").lower().split()
+    result = []
+    for word in words:
+        if len(word) >= 4 and word not in stopwords and word not in result:
+            result.append(word)
+    return result[:12]
 
-    print("\n======================================")
-    print("SEARCHING VIDEO FOOTAGE")
-    print("======================================")
 
-    keywords = get_keywords(
-        topic,
-        script
-    )
-
-    print(
-        "Keywords:",
-        ", ".join(keywords)
-    )
-
-    # We use several targeted searches instead of
-    # one extremely broad search.
-    queries = []
-
-    # 1. Exact topic
-    queries.append(
-        clean_text(topic)
-    )
-
-    # 2. Main subject from topic
+def search_videos(topic, script, history):
+    keywords = get_keywords(topic, script)
     subject = clean_text(topic)
-
     subject = re.sub(
-        r"\bbenefits?\b",
+        r"\b(benefits?|of|eating)\b",
         "",
         subject,
-        flags=re.IGNORECASE
+        flags=re.IGNORECASE,
     )
-
-    subject = re.sub(
-        r"\bof\b",
-        "",
-        subject,
-        flags=re.IGNORECASE
-    )
-
-    subject = re.sub(
-        r"\beating\b",
-        "",
-        subject,
-        flags=re.IGNORECASE
-    )
-
     subject = clean_text(subject)
 
-    if subject:
-        queries.append(subject)
-
-    # 3. Selected keyword combinations
+    queries = [clean_text(topic), subject]
     if len(keywords) >= 2:
-
-        queries.append(
-            " ".join(keywords[:2])
-        )
-
+        queries.append(" ".join(keywords[:2]))
     if len(keywords) >= 3:
+        queries.append(" ".join(keywords[:3]))
 
-        queries.append(
-            " ".join(keywords[:3])
-        )
-
-    unique_queries = []
+    queries = list(dict.fromkeys(q for q in queries if q))
+    downloaded = []
+    current_ids = set()
+    selected_records = []
 
     for query in queries:
-
-        query = query.strip()
-
-        if query and query not in unique_queries:
-            unique_queries.append(query)
-
-    downloaded = []
-    used_ids = set()
-
-    for query in unique_queries:
-
         if len(downloaded) >= MIN_VIDEOS:
             break
 
-        print("\n--------------------------------------")
-        print(f"Video query: {query}")
-
+        print(f"\nPencarian footage: {query}")
         params = {
             "key": API_KEY,
             "q": query,
             "video_type": "film",
             "orientation": "vertical",
             "safesearch": "true",
-            "per_page": 20
+            "per_page": 50,
         }
 
-        response = requests.get(
-            VIDEO_API,
-            params=params,
-            timeout=120
-        )
-
+        response = requests.get(VIDEO_API, params=params, timeout=120)
         response.raise_for_status()
-
-        data = response.json()
-
-        hits = data.get("hits", [])
-
-        print(
-            f"Results returned: {len(hits)}"
-        )
+        hits = response.json().get("hits", [])
+        print("Hasil ditemukan:", len(hits))
 
         for hit in hits:
-
             if len(downloaded) >= MIN_VIDEOS:
                 break
 
-            video_id = hit.get("id")
-
-            if video_id in used_ids:
+            video_id = str(hit.get("id", ""))
+            if not video_id or video_id in history or video_id in current_ids:
+                if video_id in history:
+                    print("Lewati footage lama:", video_id)
                 continue
 
-            videos = hit.get(
-                "videos",
-                {}
+            variants = hit.get("videos", {})
+            selected = (
+                variants.get("medium")
+                or variants.get("large")
+                or variants.get("small")
             )
-
-            # Prefer medium or large.
-            selected_video = (
-                videos.get("medium")
-                or videos.get("large")
-                or videos.get("small")
-            )
-
-            if not selected_video:
+            if not selected or not selected.get("url"):
                 continue
 
-            video_url = selected_video.get(
-                "url"
-            )
-
-            if not video_url:
-                continue
-
-            clip_number = len(downloaded) + 1
-
-            filename = os.path.join(
-                CLIPS_DIR,
-                f"clip_{clip_number:02d}.mp4"
-            )
+            index = len(downloaded) + 1
+            filename = os.path.join(CLIPS_DIR, f"clip_{index:02d}.mp4")
 
             try:
+                download_file(selected["url"], filename)
+                downloaded.append(filename)
+                current_ids.add(video_id)
+                selected_records.append({
+                    "id": video_id,
+                    "url": selected["url"],
+                    "query": query,
+                })
+                print("ID footage baru:", video_id)
+            except Exception as exc:
+                print(f"Footage {video_id} dilewati:", exc)
+                if os.path.exists(filename):
+                    os.remove(filename)
 
-                download_file(
-                    video_url,
-                    filename
-                )
+    # Simpan pilihan untuk proses video saat ini.
+    with open(CURRENT_FILE, "w", encoding="utf-8") as f:
+        json.dump(selected_records, f, indent=2)
 
-                downloaded.append(
-                    filename
-                )
-
-                used_ids.add(
-                    video_id
-                )
-
-                print(
-                    f"Selected video ID: {video_id}"
-                )
-
-            except Exception as e:
-
-                print(
-                    f"Skipping video {video_id}: "
-                    f"{e}"
-                )
+    # Catat ID baru segera setelah berhasil diunduh agar tidak terpilih
+    # lagi pada run berikutnya. Pastikan file ini di-commit ke GitHub.
+    history.update(current_ids)
+    save_history(history)
 
     return downloaded
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 def main():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(CLIPS_DIR, exist_ok=True)
 
-    os.makedirs(
-        OUTPUT_DIR,
-        exist_ok=True
-    )
-
-    os.makedirs(
-        CLIPS_DIR,
-        exist_ok=True
-    )
-
-    # Remove old clips.
-    for filename in os.listdir(CLIPS_DIR):
-
-        if filename.endswith(".mp4"):
-
-            path = os.path.join(
-                CLIPS_DIR,
-                filename
-            )
-
+    # Bersihkan klip lokal lama saja; jangan hapus riwayat.
+    for name in os.listdir(CLIPS_DIR):
+        path = os.path.join(CLIPS_DIR, name)
+        if name.lower().endswith(".mp4") and os.path.isfile(path):
             os.remove(path)
 
-    # Remove old thumbnail.
     if os.path.exists(THUMBNAIL_FILE):
         os.remove(THUMBNAIL_FILE)
 
-    # --------------------------------------------------------
-    # READ TOPIC + SCRIPT
-    # --------------------------------------------------------
+    topic = read_text(TOPIC_FILE)
+    script = read_text(SCRIPT_FILE)
 
-    topic = get_topic()
-    script = get_script()
+    print("\nTAYYIB HEALTH NOTES — FOOTAGE SEARCH")
+    print("Topic:", topic)
 
-    print("\n======================================")
-    print("V6-A VISUAL SEARCH")
-    print("======================================")
+    history = load_history()
+    print("ID footage yang sudah tercatat:", len(history))
 
-    print(f"Topic: {topic}")
+    if not search_thumbnail(topic):
+        raise RuntimeError("Tidak berhasil mendapatkan foto thumbnail.")
 
-    print("\nScript:")
-    print(script)
+    clips = search_videos(topic, script, history)
 
-    # --------------------------------------------------------
-    # THUMBNAIL
-    # --------------------------------------------------------
-
-    thumbnail_ok = search_thumbnail(
-        topic
-    )
-
-    if not thumbnail_ok:
-
-        raise RuntimeError(
-            "Tidak berhasil mendapatkan "
-            "foto thumbnail yang relevan."
-        )
-
-    # --------------------------------------------------------
-    # VIDEO FOOTAGE
-    # --------------------------------------------------------
-
-    clips = search_videos(
-        topic,
-        script
-    )
-
-    # --------------------------------------------------------
-    # VALIDATION
-    # --------------------------------------------------------
-
-    print("\n======================================")
-    print("VISUAL SEARCH RESULT")
-    print("======================================")
-
-    print(
-        f"Thumbnail: {THUMBNAIL_FILE}"
-    )
-
-    print(
-        f"Videos downloaded: {len(clips)}"
-    )
-
-    for index, clip in enumerate(
-        clips,
-        start=1
-    ):
-        print(
-            f"{index}. {clip}"
-        )
+    print(f"\nFootage baru berhasil diunduh: {len(clips)}")
+    for clip in clips:
+        print("-", clip)
 
     if len(clips) < MIN_VIDEOS:
-
         raise RuntimeError(
-            f"GAGAL: minimal {MIN_VIDEOS} "
-            f"video diperlukan, tetapi hanya "
-            f"{len(clips)} berhasil diunduh."
+            f"Hanya {len(clips)} footage baru ditemukan; "
+            f"minimal {MIN_VIDEOS} diperlukan. "
+            "Tidak akan menggunakan ulang ID yang tercatat."
         )
 
-    print("\nV6-A SUCCESS")
-    print(
-        f"Minimal {MIN_VIDEOS} video tersedia."
-    )
+    print("\nVISUAL SEARCH SUCCESS")
 
 
 if __name__ == "__main__":
