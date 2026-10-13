@@ -31,6 +31,7 @@ HEADERS = {
 }
 
 
+
 def ai_request(prompt, max_tokens=1200):
     payload = {
         "model": MODEL,
@@ -57,15 +58,42 @@ def ai_request(prompt, max_tokens=1200):
     response.raise_for_status()
     data = response.json()
 
-    choices = data.get("choices", [])
+    choices = data.get("choices") or []
     if not choices:
-        raise RuntimeError("OpenRouter tidak mengembalikan choices.")
+        raise RuntimeError(
+            "OpenRouter tidak memberikan choices. "
+            f"Response keys: {list(data.keys())}"
+        )
 
-    content = choices[0].get("message", {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("OpenRouter mengembalikan respons kosong.")
+    choice = choices[0]
+    message = choice.get("message") or {}
+    content = message.get("content")
 
-    return content.strip()
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+
+    # Beberapa model dapat mengembalikan teks pada field lain.
+    text_value = choice.get("text")
+    if isinstance(text_value, str) and text_value.strip():
+        return text_value.strip()
+
+    finish_reason = choice.get("finish_reason")
+    native_reason = choice.get("native_finish_reason")
+    error_info = choice.get("error") or data.get("error")
+
+    print("OpenRouter returned no usable text.")
+    print("Finish reason:", finish_reason)
+    print("Native finish reason:", native_reason)
+    print("Error details:", error_info)
+    print("Model returned:", data.get("model"))
+    print("Usage:", data.get("usage"))
+
+    raise RuntimeError(
+        "Respons OpenRouter tidak berisi teks. "
+        f"finish_reason={finish_reason}; "
+        f"native_finish_reason={native_reason}; "
+        f"error={error_info}"
+    )
 
 
 def normalize(text):
