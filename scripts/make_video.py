@@ -81,24 +81,15 @@ def get_duration(filename):
         )
 
 
+
 def get_voice_duration():
     duration = get_duration(VOICE_FILE)
 
-    print(
-        f"\nVoice duration: {duration:.2f} seconds"
-    )
+    print(f"\nVoice duration: {duration:.2f} seconds")
+    print("Video akan mengikuti durasi penuh narasi.")
 
-    if duration < 50:
-        print(
-            "WARNING: voice di bawah 50 detik. "
-            "Pastikan voice.py sudah memakai V7 timing."
-        )
-
-    if duration > 55:
-        raise RuntimeError(
-            f"Voice terlalu panjang: {duration:.2f}s. "
-            "Target V7 adalah 50-55 detik."
-        )
+    if duration <= 0:
+        raise RuntimeError("Durasi voice tidak valid.")
 
     return duration
 
